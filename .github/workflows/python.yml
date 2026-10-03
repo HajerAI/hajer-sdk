@@ -23,9 +23,8 @@ jobs:
   ci:
     name: just ci (${{ matrix.python }})
     runs-on: ubuntu-latest
-    # 3.11 is the supported interpreter. On 3.12+ the replay child and asyncio call-site capture still fail
-    # (python/CHANGELOG.md, Known issues); those jobs run so the gap stays visible, and do not block.
-    continue-on-error: ${{ matrix.python != '3.11' }}
+    # uv takes the runner's own interpreter when it matches (3.12 is Ubuntu 24.04's `python3.12`, Debian-patched)
+    # and downloads the others, so the matrix also covers a distribution-patched `sysconfig` (tests/test_child_boot.py).
     strategy:
       fail-fast: false
       matrix:

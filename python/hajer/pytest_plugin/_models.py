@@ -84,6 +84,10 @@ class Attempt(BaseModel):
     #: bytes it wrote, never read from the child's receipt. Only the digest is kept, never the input.
     input_digest: str | None = None
     request_fingerprint: str | None = None
+    #: The last line of a failed child's stderr (`CHILD_FAILED`), clipped — for a Python traceback, the exception it ends
+    #: with. It is the application's own stderr and stays with its owner: the local results and the failure message carry
+    #: it, and `hajer._upload._wire_receipt` strips `executionEvidence` before anything is sent.
+    stderr_tail: str | None = None
 
 
 # Offline measurement records; their JSON is checked against the engine contract in tests.

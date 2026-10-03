@@ -40,6 +40,15 @@ def execute(suite: Suite, case: Case, *, live: bool, settings: HajerSettings) ->
     return _attempt(suite, spec_text, live=live, settings=settings).model_copy(update={"input_digest": digest})
 
 
+def _stderr_tail(stderr: bytes) -> str | None:
+    """The last non-empty line a failed child wrote to stderr, clipped: for a traceback, the exception it ended with.
+
+    One line and not the stream, because the stream is the application's and may say anything, while one line is what
+    names the failure a bare `CHILD_FAILED` hides. It stays local (`Attempt.stderr_tail`)."""
+    lines = [line.strip() for line in stderr.decode("utf-8", errors="replace").splitlines() if line.strip()]
+    return clipped(lines[-1]) if lines else None
+
+
 def _attempt(suite: Suite, spec_text: str, *, live: bool, settings: HajerSettings) -> Attempt:
     try:
         declared = declared_adapters(suite.root)[1] if (suite.root / REPLAY_CONFIG).is_file() else {}
@@ -72,7 +81,7 @@ def _attempt(suite: Suite, spec_text: str, *, live: bool, settings: HajerSetting
         except subprocess.TimeoutExpired:
             return Attempt(reason="TIMEOUT")
         if result.returncode or not receipt.is_file():
-            return Attempt(reason="CHILD_FAILED")
+            return Attempt(reason="CHILD_FAILED", stderr_tail=_stderr_tail(result.stderr))
         return Attempt.model_validate_json(receipt.read_bytes())
 
 
@@ -170,20 +179,9 @@ def run(
             history.append(answer)
         executions.append(
             {
-                "mode": attempt.mode,
-                "providerSuccesses": attempt.provider_successes,
-                "reason": _clipped(attempt.reason),
-                "inputDigest": attempt.input_digest,
+                **_evidence(attempt),
                 "requestFingerprint": attempt.request_fingerprint,
-                "edited": [
-                    {
-                        "mode": other.mode,
-                        "providerSuccesses": other.provider_successes,
-                        "reason": _clipped(other.reason),
-                        "inputDigest": other.input_digest,
-                    }
-                    for other, _ in edited.values()
-                ],
+                "edited": [_evidence(other) for other, _ in edited.values()],
             }
         )
         reasons.append(attempt.reason or next((other.reason for other, _ in edited.values() if other.reason), None))
@@ -218,6 +216,20 @@ def run(
             {"choiceId": choice, "holds": witness(predicate, request)} for choice, predicate in case.situations
         ]
     return result
+
+
+def _evidence(attempt: Attempt) -> dict[str, JsonValue]:
+    """One attempt as `executionEvidence` records it. A failed child's stderr line is there only when there is one, so an
+    attempt that ran reads exactly as it always has."""
+    evidence: dict[str, JsonValue] = {
+        "mode": attempt.mode,
+        "providerSuccesses": attempt.provider_successes,
+        "reason": _clipped(attempt.reason),
+        "inputDigest": attempt.input_digest,
+    }
+    if attempt.stderr_tail is not None:
+        evidence["stderrTail"] = attempt.stderr_tail
+    return evidence
 
 
 def _base(
