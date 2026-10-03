@@ -60,7 +60,14 @@ CALLER_FRAMES_UNRESOLVED: Final[str] = (
 
 
 def _library_prefixes() -> tuple[str, ...]:
-    """Every directory this interpreter keeps code somebody else installed in, plus this package."""
+    """Every directory this interpreter keeps code somebody else installed in, plus this package.
+
+    Each one in both spellings, as `sysconfig` names it and as the file system resolves it, because the one a
+    frame carries depends on how its module was found: Homebrew's `sysconfig` names the standard library behind
+    `opt/python@3.x/…` while its modules run from `Cellar/python@3.x/…`, and this package imported through a
+    symlinked path (`PYTHONPATH=/tmp/…` on macOS) carries the symlink. The standard library is also taken from a
+    module of it (`inspect`), which is exactly the spelling every frame run from it has.
+    """
     paths = sysconfig.get_paths()
     found = {paths[key] for key in ("stdlib", "platstdlib", "purelib", "platlib") if key in paths}
     try:
@@ -68,10 +75,11 @@ def _library_prefixes() -> tuple[str, ...]:
     except AttributeError:  # pragma: no cover - a virtual environment without the hook
         pass
     found.add(site.getusersitepackages())
-    # This package as its frames spell it and as the file system resolves it: imported through a symlinked
-    # path (`PYTHONPATH=/tmp/…` on macOS), its own frames would otherwise count as the application's.
-    found.add(str(Path(__file__).resolve().parent))
+    stdlib_module = getattr(inspect, "__file__", None)
+    if isinstance(stdlib_module, str):
+        found.add(os.path.dirname(stdlib_module))
     found.add(os.path.dirname(os.path.abspath(__file__)))
+    found.update({os.path.realpath(item) for item in list(found) if item})
     return tuple(sorted(item for item in found if item))
 
 
@@ -345,12 +353,15 @@ def _is_library(filename: str) -> bool:
         # uv's temporary runner environment can add another venv through .pth after
         # this module loads. Its dependency frames must not consume the application's
         # bounded frame slots merely because they live outside the initial prefixes.
+        # A file reached through a symlink the prefixes do not name is resolved once, here,
+        # and the answer remembered: the walk never pays for it again.
         parts = filename.replace("\\", "/").split("/")
         known = (
             filename.startswith("<frozen ")
             or "site-packages" in parts
             or "dist-packages" in parts
             or any(filename.startswith(prefix) for prefix in _PREFIXES)
+            or any(os.path.realpath(filename).startswith(prefix) for prefix in _PREFIXES)
         )
         if len(_CLASSIFIED.files) < FILE_DIGESTS_CACHED:
             _CLASSIFIED.files[filename] = known

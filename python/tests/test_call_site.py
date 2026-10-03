@@ -6,7 +6,9 @@ nothing derived from the prompt travels with them. `HAJER_CAPTURE_CALL_SITE=0` t
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import os
 import runpy
 import subprocess
@@ -519,6 +521,21 @@ def test_the_sdk_s_own_directory_is_library_code_however_it_was_imported() -> No
     here = os.path.dirname(os.path.abspath(_frames.__file__))
     assert here in _frames._PREFIXES  # pyright: ignore[reportPrivateUsage]
     assert str(Path(_frames.__file__).resolve().parent) in _frames._PREFIXES  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a directory symlink needs a privilege on Windows")
+def test_the_standard_library_is_library_code_however_the_interpreter_spells_its_directory(tmp_path: Path) -> None:
+    """Homebrew's `sysconfig` names the standard library behind `opt/…` while its modules run from `Cellar/…`, so an
+    asyncio frame carried the resolved spelling and counted as the application's — the loop's own `create_task` was
+    recorded in place of the caller. Either spelling is the interpreter's, and a module reached through a symlink the
+    prefixes never named is resolved before it is taken for application code."""
+    for module_file in (asyncio.__file__, inspect.__file__):
+        assert _frames._is_library(module_file)  # pyright: ignore[reportPrivateUsage]
+        assert _frames._is_library(os.path.realpath(module_file))  # pyright: ignore[reportPrivateUsage]
+    link = tmp_path / "interpreter"
+    link.symlink_to(os.path.dirname(inspect.__file__), target_is_directory=True)
+    assert _frames._is_library(str(link / "asyncio" / "base_events.py"))  # pyright: ignore[reportPrivateUsage]
+    assert not _frames._is_library(str(tmp_path / "app" / "service.py"))  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize("directory", ["site-packages", "dist-packages"])
