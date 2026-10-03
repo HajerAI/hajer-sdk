@@ -1,0 +1,32 @@
+{
+  "fixture": "observed_app",
+  "revision": "0000000000000000000000000000000000000013",
+  "labelledBy": "construction",
+  "why": "A tiny invented application written so that the WIRE and the TREE can be compared on a repository whose counts are known before either reader runs. Nothing here is read from any checkout: the package is `depotapp`, the workflow is `RoutePlanner.plan`, the prompt is a file the module reads through `Path(__file__).parent`, the two tool schemas are classes in their own module, and the phase registry binds a different tool set per mode. The prompt file is deliberately the thing a byte budget drops first: with it omitted from the snapshot the static reader loses every sentence of it and the observed reader loses none, which is the measurement this fixture exists for.",
+  "package": "depotapp",
+  "files": {
+    "agent.py.txt": "depotapp/agent.py",
+    "tools.py.txt": "depotapp/tools.py",
+    "prompt.md.txt": "depotapp/prompt.md"
+  },
+  "workflow": "RoutePlanner.plan",
+  "promptPath": "depotapp/prompt.md",
+  "promptSentences": [
+    "Every route MUST name the depot it starts from.",
+    "Return AT MOST 5 stops on any one route.",
+    "NEVER schedule a stop outside the depot's own region.",
+    "ALWAYS call check_capacity before proposing a route.",
+    "The courier grade MUST be one of standard, express or overnight.",
+    "Explain nothing: ONLY the structured answer is read."
+  ],
+  "whyThoseSentences": "Six sentences, each carrying exactly one registered R12 imperative marker (MUST, AT MOST, NEVER, ALWAYS, MUST, ONLY). Every one of them is on the wire on every call of both phases, because the prompt is the system prompt of both.",
+  "schemaFields": {
+    "propose_route": ["depot", "stops", "grade", "distance_km"],
+    "check_capacity": ["depot", "window_hours"]
+  },
+  "toolSets": {
+    "initial": ["check_capacity", "propose_route"],
+    "reflect": ["propose_route"]
+  },
+  "consumerSlice": "route[\"stops\"][:5] in RoutePlanner.plan — the read the SDK's reply-read recorder sees as content[0].input.stops"
+}

@@ -1,0 +1,62 @@
+# Python SDK quality gate: `just ci` (lockfile, ruff, basedpyright strict, vulture, deptry, the contract
+# check and the full pytest suite) on every Python version the package supports.
+#
+# No network: every test uses httpx.MockTransport and fake provider clients. `contract/` is in `paths`
+# because hajer/_wire.py is generated from contract/openapi.json.
+name: python
+
+on:
+  push:
+    branches: [main]
+    paths: ["python/**", "contract/**", "action/**", ".github/workflows/python.yml"]
+  pull_request:
+    paths: ["python/**", "contract/**", "action/**", ".github/workflows/python.yml"]
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: just ci (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    # 3.11 is the supported interpreter. On 3.12+ the replay child and asyncio call-site capture still fail
+    # (python/CHANGELOG.md, Known issues); those jobs run so the gap stays visible, and do not block.
+    continue-on-error: ${{ matrix.python != '3.11' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+          python-version: ${{ matrix.python }}
+      - uses: extractions/setup-just@v3
+      - run: uv sync --frozen --all-extras
+      - run: just ci
+
+  build:
+    name: build and smoke-test the wheel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build --out-dir dist
+      # The wheel installs into a clean environment with only its declared dependencies, imports, and is
+      # inert without a key — the first thing a user does after `pip install hajer`.
+      - run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/python -c "import hajer; c = hajer.Hajer(); assert c.inert; print(hajer.__version__)"

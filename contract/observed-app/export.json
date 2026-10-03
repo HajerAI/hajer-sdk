@@ -1,0 +1,284 @@
+{
+  "observations": [
+    {
+      "calls": [
+        {
+          "callerFrames": [
+            {
+              "file": "depotapp/agent.py",
+              "line": 42,
+              "module": "depotapp.agent",
+              "qualname": "RoutePlanner.plan"
+            }
+          ],
+          "harnessFramesOmitted": 3,
+          "replyReads": [
+            "content",
+            "content[0]",
+            "content[0].input",
+            "content[0].input.stops",
+            "content[0].input.stops[:5]",
+            "content[0].input.grade",
+            "content[0].input.stops[:5][len]",
+            "content[0].input.stops[:5][*]"
+          ],
+          "request": {
+            "max_tokens": 512,
+            "messages": [
+              {
+                "content": "Plan a route from north for 6 stops.",
+                "role": "user"
+              }
+            ],
+            "model": "fixture-model",
+            "system": "# Route planning instructions\n\nYou are planning delivery routes for a depot.\n\nEvery route MUST name the depot it starts from.\nReturn AT MOST 5 stops on any one route.\nNEVER schedule a stop outside the depot's own region.\nALWAYS call check_capacity before proposing a route.\nThe courier grade MUST be one of standard, express or overnight.\nExplain nothing: ONLY the structured answer is read.\n",
+            "tools": [
+              {
+                "description": "Ask the depot how much capacity is left.",
+                "input_schema": {
+                  "properties": {
+                    "depot": {
+                      "minLength": 3,
+                      "type": "string"
+                    },
+                    "window_hours": {
+                      "maximum": 24,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "depot"
+                  ],
+                  "type": "object"
+                },
+                "name": "check_capacity"
+              },
+              {
+                "description": "Propose one delivery route.",
+                "input_schema": {
+                  "properties": {
+                    "depot": {
+                      "minLength": 3,
+                      "type": "string"
+                    },
+                    "distance_km": {
+                      "maximum": 400,
+                      "type": "number"
+                    },
+                    "grade": {
+                      "enum": [
+                        "standard",
+                        "express",
+                        "overnight"
+                      ],
+                      "type": "string"
+                    },
+                    "stops": {
+                      "maxItems": 5,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "depot",
+                    "stops",
+                    "grade"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_route"
+              }
+            ]
+          },
+          "responseBody": "{\"id\":\"msg_fixture\",\"model\":\"fixture-model\",\"stopReason\":\"tool_use\",\"mode\":\"json\"}",
+          "responseStatus": 200,
+          "streamed": false,
+          "truncated": false,
+          "wire": "ANTHROPIC_MESSAGES"
+        }
+      ],
+      "observationId": "ing-fixture-00"
+    },
+    {
+      "calls": [
+        {
+          "callerFrames": [
+            {
+              "file": "depotapp/agent.py",
+              "line": 42,
+              "module": "depotapp.agent",
+              "qualname": "RoutePlanner.plan"
+            }
+          ],
+          "harnessFramesOmitted": 3,
+          "replyReads": [
+            "content",
+            "content[0]",
+            "content[0].input",
+            "content[0].input.stops",
+            "content[0].input.stops[:5]",
+            "content[0].input.grade",
+            "content[0].input.stops[:5][len]",
+            "content[0].input.stops[:5][*]"
+          ],
+          "request": {
+            "max_tokens": 512,
+            "messages": [
+              {
+                "content": "Plan a route from north for 6 stops.",
+                "role": "user"
+              }
+            ],
+            "model": "fixture-model",
+            "system": "# Route planning instructions\n\nYou are planning delivery routes for a depot.\n\nEvery route MUST name the depot it starts from.\nReturn AT MOST 5 stops on any one route.\nNEVER schedule a stop outside the depot's own region.\nALWAYS call check_capacity before proposing a route.\nThe courier grade MUST be one of standard, express or overnight.\nExplain nothing: ONLY the structured answer is read.\n",
+            "tools": [
+              {
+                "description": "Ask the depot how much capacity is left.",
+                "input_schema": {
+                  "properties": {
+                    "depot": {
+                      "minLength": 3,
+                      "type": "string"
+                    },
+                    "window_hours": {
+                      "maximum": 24,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "depot"
+                  ],
+                  "type": "object"
+                },
+                "name": "check_capacity"
+              },
+              {
+                "description": "Propose one delivery route.",
+                "input_schema": {
+                  "properties": {
+                    "depot": {
+                      "minLength": 3,
+                      "type": "string"
+                    },
+                    "distance_km": {
+                      "maximum": 400,
+                      "type": "number"
+                    },
+                    "grade": {
+                      "enum": [
+                        "standard",
+                        "express",
+                        "overnight"
+                      ],
+                      "type": "string"
+                    },
+                    "stops": {
+                      "maxItems": 5,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "depot",
+                    "stops",
+                    "grade"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_route"
+              }
+            ]
+          },
+          "responseBody": "{\"id\":\"msg_fixture\",\"model\":\"fixture-model\",\"stopReason\":\"tool_use\",\"mode\":\"json\"}",
+          "responseStatus": 200,
+          "streamed": false,
+          "truncated": false,
+          "wire": "ANTHROPIC_MESSAGES"
+        }
+      ],
+      "observationId": "ing-fixture-01"
+    },
+    {
+      "calls": [
+        {
+          "callerFrames": [
+            {
+              "file": "depotapp/agent.py",
+              "line": 42,
+              "module": "depotapp.agent",
+              "qualname": "RoutePlanner.plan"
+            }
+          ],
+          "harnessFramesOmitted": 3,
+          "replyReads": [
+            "content",
+            "content[0]",
+            "content[0].input",
+            "content[0].input.stops",
+            "content[0].input.stops[:5]",
+            "content[0].input.grade",
+            "content[0].input.stops[:5][len]",
+            "content[0].input.stops[:5][*]"
+          ],
+          "request": {
+            "max_tokens": 512,
+            "messages": [
+              {
+                "content": "Plan a route from north for 6 stops.",
+                "role": "user"
+              }
+            ],
+            "model": "fixture-model",
+            "system": "# Route planning instructions\n\nYou are planning delivery routes for a depot.\n\nEvery route MUST name the depot it starts from.\nReturn AT MOST 5 stops on any one route.\nNEVER schedule a stop outside the depot's own region.\nALWAYS call check_capacity before proposing a route.\nThe courier grade MUST be one of standard, express or overnight.\nExplain nothing: ONLY the structured answer is read.\n",
+            "tools": [
+              {
+                "description": "Propose one delivery route.",
+                "input_schema": {
+                  "properties": {
+                    "depot": {
+                      "minLength": 3,
+                      "type": "string"
+                    },
+                    "distance_km": {
+                      "maximum": 400,
+                      "type": "number"
+                    },
+                    "grade": {
+                      "enum": [
+                        "standard",
+                        "express",
+                        "overnight"
+                      ],
+                      "type": "string"
+                    },
+                    "stops": {
+                      "maxItems": 5,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "depot",
+                    "stops",
+                    "grade"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_route"
+              }
+            ]
+          },
+          "responseBody": "{\"id\":\"msg_fixture\",\"model\":\"fixture-model\",\"stopReason\":\"tool_use\",\"mode\":\"json\"}",
+          "responseStatus": 200,
+          "streamed": false,
+          "truncated": false,
+          "wire": "ANTHROPIC_MESSAGES"
+        }
+      ],
+      "observationId": "ing-fixture-02"
+    }
+  ],
+  "schemaVersion": "observed-calls-v1"
+}

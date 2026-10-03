@@ -1,0 +1,223 @@
+[project]
+name = "hajer"
+version = "0.1.0"
+description = "The Hajer SDK: hand a verifier the request, the output and the evidence, get an assessment back."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hajer" }]
+keywords = ["llm", "ai", "verification", "guardrails", "evaluation", "observability", "openai", "anthropic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Framework :: Pytest",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    # The only two runtime dependencies. httpx is the transport (sync + async from one library,
+    # and `httpx.MockTransport` is the seam every test in this package uses instead of a socket);
+    # pydantic parses the wire into the typed objects the public API returns.
+    "httpx>=0.28.1",
+    # The floor is what a customer can install the SDK beside, not what we develop against. It is
+    # `>=2.12` because this package runs inside somebody else's process and a floor above their pin
+    # makes the SDK uninstallable for them: the first application this SDK was accepted against locks
+    # pydantic 2.12.4, and a `>=2.13.5` floor would have refused to resolve against its own lock.
+    # Measured, not guessed: the whole suite runs green on 2.12.4 in a venv pinned to it (the
+    # `test-matrix` note below), so nothing here uses a 2.13 feature. Raising this floor again needs a
+    # feature that fails on 2.12, named.
+    "pydantic>=2.12",
+]
+
+# The versions of the runtime dependencies this package is known to pass its whole suite on, beyond
+# the one `uv.lock` develops against. Not read by any tool: it is the record behind the floor above,
+# so a later reader can tell a measured floor from a hopeful one.
+# pydantic 2.12.4 — 118 passed, cpython 3.13.14, httpx 0.28.1 (measured 2026-09-19).
+[tool.hajer.test-matrix]
+pydantic = ["2.12.4", "locked"]
+
+# `wrap(client)` is the only part of the SDK that touches a provider library, and it never imports
+# one: it instruments the client object the caller hands it. These extras exist so a customer can
+# install the provider they already use alongside the SDK, not because the SDK needs them.
+[project.urls]
+Homepage = "https://hajer.ai"
+Repository = "https://github.com/HajerAI/hajer-sdk"
+Documentation = "https://github.com/HajerAI/hajer-sdk/tree/main/python/docs"
+Issues = "https://github.com/HajerAI/hajer-sdk/issues"
+Changelog = "https://github.com/HajerAI/hajer-sdk/blob/main/python/CHANGELOG.md"
+
+[project.optional-dependencies]
+ci = ["pytest>=9.1.1"]
+openai = ["openai>=3.13.0"]
+anthropic = ["anthropic>=0.75.0"]
+otel = ["opentelemetry-sdk>=1.37.0"]
+
+[project.entry-points.pytest11]
+"hajer.pytest_plugin" = "hajer.pytest_plugin"
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "hajer"
+# Flat layout: hajer/ lives at the project root, not under src/.
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+    "basedpyright>=1.40.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "deptry>=0.25.1",
+    "vulture>=2.16",
+    "httpx2>=2.13.0",
+    "langchain-openai>=0.3",
+]
+
+# ── Ruff ─────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# Three generated modules: a formatter that rewrote one would put it permanently at odds with its
+# generator (`just contract-check` compares bytes, and `_rules.py`/`_checksums.py` also carry a digest of
+# their sources). basedpyright still checks all three.
+extend-exclude = [".venv", "hajer/_wire.py", "hajer/_rules.py", "hajer/_checksums.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",       # pycodestyle errors
+    "W",       # pycodestyle warnings
+    "F",       # pyflakes
+    "I",       # isort
+    "B",       # flake8-bugbear
+    "C4",      # flake8-comprehensions
+    "UP",      # pyupgrade
+    "ARG",     # unused arguments
+    "RUF",     # ruff-specific rules
+    "ASYNC",   # blocking calls inside async code
+    "DTZ",     # naive datetimes
+    "BLE",     # blind `except Exception`
+    "T20",     # print()
+    "N",       # pep8 naming
+    "PT",      # pytest style
+    "S",       # bandit
+    "ERA",     # commented-out code
+    "FIX",     # TODO / FIXME / XXX / HACK left in code
+    "PLC0415", # imports at module top only
+    "TID",     # banned imports (TID251) and no relative imports (TID252)
+]
+ignore = [
+    "E501", # line too long (handled by the formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hajer", "tests"]
+
+# Each ban names the one sanctioned place.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"os.environ".msg = "The process environment is read in one place: HajerSettings.from_env (hajer/_settings.py)"
+"os.getenv".msg = "The process environment is read in one place: HajerSettings.from_env (hajer/_settings.py)"
+"openai".msg = "wrap() instruments the client object it is handed; the SDK never imports a provider library"
+"anthropic".msg = "wrap() instruments the client object it is handed; the SDK never imports a provider library"
+"requests".msg = "httpx only: one library for the sync and the async transport"
+
+[tool.ruff.lint.per-file-ignores]
+# The one place the process environment is read.
+"hajer/_settings.py" = ["TID251"]
+# The wire generator is a script: it reports its progress on stderr and is run by hand and by CI.
+"scripts/generate_wire.py" = ["T20"]
+# Test code asserts, uses literal credentials, and builds fake provider clients whose method
+# signatures are the provider's, not ours.
+"tests/**" = ["S101", "S105", "S106", "ARG001", "ARG002"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ── basedpyright ─────────────────────────────────────────────────────────────
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+include = ["hajer", "tests", "scripts"]
+exclude = ["**/__pycache__", ".venv"]
+venvPath = "."
+venv = ".venv"
+# The "no Any from the get-go" lock: written `Any` is an error everywhere.
+reportExplicitAny = "error"
+# Every `pyright: ignore` must name the rule it suppresses, and must be needed.
+reportIgnoreCommentWithoutRule = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+markers = [
+    "loopback: opens a socket, on 127.0.0.1 (or a private Unix socket file) only — the one exception to no network in tests (CLAUDE.md); deselect with -m 'not loopback'",
+]
+
+# ── deptry ───────────────────────────────────────────────────────────────────
+
+[tool.deptry]
+known_first_party = ["hajer", "tests"]
+
+[tool.deptry.per_rule_ignores]
+# Declared and deliberately never imported: `wrap()` instruments the client object the caller hands
+# it, so these two extras exist to install the provider a customer already uses, not to be imported.
+DEP002 = ["anthropic", "openai"]
+
+# ── vulture ──────────────────────────────────────────────────────────────────
+
+[tool.vulture]
+# A library's public names have no caller inside the library, so the tests are part of the scan:
+# a public name nothing in hajer/ and nothing in tests/ uses is dead, and vulture says so.
+paths = ["hajer", "tests", "scripts"]
+# Two declaration modules, excluded because every field of a
+# pydantic model is read by validation and serialization, which vulture cannot see, so the whole
+# module would otherwise have to be whitelisted field by field. `_wire.py` is generated.
+# `tests/fakes.py` joins them: every field on a fake provider response exists to be read by
+# `getattr` at runtime, which is exactly what vulture cannot see. `_rules.py` and `_checksums.py` are
+# generated too, and their `SOURCE_DIGEST` is read by the generator's `--check` out of the *text* of the
+# file rather than by importing it — a read no scan of Python names can see.
+exclude = ["*/_models.py", "*/_wire.py", "*/_rules.py", "*/_checksums.py", "*/tests/fakes.py"]
+min_confidence = 60
+sort_by_size = true
+ignore_decorators = ["@field_validator", "@model_validator", "@pytest.fixture"]
+ignore_names = [
+    # `_supported.WRAP_CONSTRUCTORS` is read by the Hajer platform's install planner and by the tests only.
+    "WRAP_CONSTRUCTORS",
+    # pydantic / stdlib protocol names
+    "model_config",
+    # `socketserver.ThreadingMixIn` reads this class attribute and `wsgiref`'s handler calls this method;
+    # both are stdlib protocol names that no line of ours mentions, which is exactly what vulture cannot see.
+    # They are load-bearing: `daemon_threads` is why Ctrl-C stops the proxy, and the overridden `log_message`
+    # is why a customer's provider paths and query strings do not end up in an access log.
+    "daemon_threads",
+    "log_message",
+    # `pytest` calls this hook by name out of `conftest.py`, and Python calls `__getitem__`
+    # through the subscript syntax. Both are protocol names no line of ours mentions, which is
+    # the same category as the two above.
+    "pytest_addoption",
+    # pytest calls Item.runtest and reads Session.exitstatus externally.
+    "runtest",
+    "exitstatus",
+    "__getitem__",
+    # `isinstance` reads `__class__` and the subscript syntax calls `__getitem__`; neither is a name
+    # any line of ours writes, which is what a protocol name is.
+    "__class__",
+    # OpenTelemetry's `SpanProcessor` protocol: the `TracerProvider` calls these on every span and flush.
+    "on_start",
+    "force_flush",
+]

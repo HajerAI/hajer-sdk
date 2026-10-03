@@ -1,0 +1,57 @@
+# Publish the `hajer` package to PyPI.
+#
+# Push a tag `python-v<version>` whose version equals `python/pyproject.toml`'s; the workflow runs the full
+# gate, builds the sdist and wheel, and publishes them with PyPI trusted publishing (no API token is
+# stored anywhere). `workflow_dispatch` publishes the current main to TestPyPI instead, to rehearse.
+#
+# One-time setup (repository admin):
+#   1. On pypi.org and test.pypi.org, add a trusted publisher for project `hajer`: owner HajerAI,
+#      repository hajer-sdk, workflow release-python.yml, environment `pypi` / `testpypi`.
+#   2. In this repository's settings, create the environments `pypi` (with required reviewers) and `testpypi`.
+name: release-python
+
+on:
+  push:
+    tags: ["python-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: extractions/setup-just@v3
+      - name: The tag names the version being built
+        if: github.event_name == 'push'
+        run: |
+          version="$(uv version --short)"
+          test "python-v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != python-v${version}"; exit 1; }
+      - run: uv sync --frozen --all-extras
+      - run: just ci
+      - run: uv build --out-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: python/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ github.event_name == 'push' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}

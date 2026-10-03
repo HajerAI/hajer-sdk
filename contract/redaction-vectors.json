@@ -1,0 +1,346 @@
+{
+  "$comment": "Shared redaction vectors. The expectations are the Python SDK's own output, generated from the Hajer platform's redaction catalog; typescript/test/redact.test.ts and python/tests/test_redact_vectors.py both read this file, so the two clients cannot disagree about what a submission contains without a red test on both sides. The two provider-key classes are deliberately not here: a data file carrying a literal provider-key prefix trips credential scanners. Each client asserts those two against its own inline sample instead.",
+  "catalog": "redaction-rules@6",
+  "positives": [
+    {
+      "name": "aws access key id",
+      "value": "AKIAIOSFODNN7EXAMPLE",
+      "classes": [
+        "AWS_ACCESS_KEY_ID"
+      ],
+      "redacted": "[redacted:AWS_ACCESS_KEY_ID]"
+    },
+    {
+      "name": "bearer token",
+      "value": "Authorization: Bearer abcdefghijklmnopqrstuvwx",
+      "classes": [
+        "BEARER_TOKEN"
+      ],
+      "redacted": "Authorization: [redacted:BEARER_TOKEN]"
+    },
+    {
+      "name": "card, grouped",
+      "value": "pay with 4111 1111 1111 1111 please",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "pay with [redacted:CARD] please"
+    },
+    {
+      "name": "card, unspaced",
+      "value": "4111111111111111",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "[redacted:CARD]"
+    },
+    {
+      "name": "iban",
+      "value": "GB82 WEST 1234 5698 7654 32",
+      "classes": [
+        "IBAN"
+      ],
+      "redacted": "[redacted:IBAN]"
+    },
+    {
+      "name": "vin",
+      "value": "1HGCM82633A004352",
+      "classes": [
+        "VIN"
+      ],
+      "redacted": "[redacted:VIN]"
+    },
+    {
+      "name": "us ssn",
+      "value": "123-45-6789",
+      "classes": [
+        "US_SSN"
+      ],
+      "redacted": "[redacted:US_SSN]"
+    },
+    {
+      "name": "email",
+      "value": "write to someone@example.com",
+      "classes": [
+        "EMAIL"
+      ],
+      "redacted": "write to [redacted:EMAIL]"
+    },
+    {
+      "name": "phone",
+      "value": "call +1 (415) 555-0142",
+      "classes": [
+        "PHONE"
+      ],
+      "redacted": "call [redacted:PHONE]"
+    },
+    {
+      "name": "person name with honorific",
+      "value": "Contact Dr. Alice Robinson about it",
+      "classes": [
+        "PERSON_NAME"
+      ],
+      "redacted": "Contact [redacted:PERSON_NAME] about it"
+    },
+    {
+      "name": "postal address with postcode",
+      "value": "221 Baker Street London NW1 6XE",
+      "classes": [
+        "POSTAL_ADDRESS"
+      ],
+      "redacted": "[redacted:POSTAL_ADDRESS]"
+    },
+    {
+      "name": "date of birth phrase",
+      "value": "date of birth: 14/03/1981",
+      "classes": [
+        "DATE_OF_BIRTH"
+      ],
+      "redacted": "[redacted:DATE_OF_BIRTH]"
+    },
+    {
+      "name": "account-like run",
+      "value": "account 1234 5678 9012 3456 7890",
+      "classes": [
+        "ACCOUNT_LIKE"
+      ],
+      "redacted": "account [redacted:ACCOUNT_LIKE]"
+    },
+    {
+      "name": "card with expiry and cvv (catalog v4)",
+      "value": "my card is 4111 1111 1111 1111 1225 123",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "my card is [redacted:CARD]"
+    },
+    {
+      "name": "card with split expiry and cvv (catalog v4)",
+      "value": "4111 1111 1111 1111 12 25 123",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "[redacted:CARD]"
+    },
+    {
+      "name": "mastercard with expiry and pin (catalog v4)",
+      "value": "5500 0000 0000 0004 0926 4321",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "[redacted:CARD]"
+    },
+    {
+      "name": "unspaced card with expiry and cvv (catalog v4)",
+      "value": "4111111111111111 1225 123",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "[redacted:CARD]"
+    },
+    {
+      "name": "two cards in one run (catalog v4)",
+      "value": "cards 4111 1111 1111 1111 5500 0000 0000 0004 on file",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "cards [redacted:CARD] on file"
+    },
+    {
+      "name": "24-digit domestic account (catalog v4)",
+      "value": "HU account 11773016-11111018-00000000",
+      "classes": [
+        "ACCOUNT_LIKE"
+      ],
+      "redacted": "HU account [redacted:ACCOUNT_LIKE]"
+    },
+    {
+      "name": "account longer than twenty digits (catalog v4)",
+      "value": "ref 1234 5678 9012 3456 7890 1234",
+      "classes": [
+        "ACCOUNT_LIKE"
+      ],
+      "redacted": "ref [redacted:ACCOUNT_LIKE]"
+    },
+    {
+      "name": "iban, packed (catalog v4)",
+      "value": "DE89370400440532013000",
+      "classes": [
+        "IBAN"
+      ],
+      "redacted": "[redacted:IBAN]"
+    },
+    {
+      "name": "dotted card (catalog v5)",
+      "value": "card: 4111.1111.1111.1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "tab-separated card (catalog v5)",
+      "value": "card: 4111\t1111\t1111\t1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "no-break-space card (catalog v5)",
+      "value": "card: 4111 1111 1111 1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "underscore card (catalog v5)",
+      "value": "card: 4111_1111_1111_1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "double-spaced card (catalog v5)",
+      "value": "card: 4111  1111  1111  1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "spaced-dash card (catalog v5)",
+      "value": "card: 4111 - 1111 - 1111 - 1111 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "dotted card with expiry and cvv (catalog v5)",
+      "value": "card: 4111.1111.1111.1111 12/25 123 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card: [redacted:CARD] thanks"
+    },
+    {
+      "name": "card and cvv before a wide gap (catalog v6)",
+      "value": "4111111111111111 123    2",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "[redacted:CARD]    2"
+    },
+    {
+      "name": "card and short group before loose digits (catalog v6)",
+      "value": "no. 013644645143793  531   7 thanks",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "no. [redacted:CARD]  531   7 thanks"
+    },
+    {
+      "name": "grouped card and cvv before a wide gap (catalog v6)",
+      "value": "card 4111 1111 1111 1111 123   9 end",
+      "classes": [
+        "CARD"
+      ],
+      "redacted": "card [redacted:CARD]   9 end"
+    }
+  ],
+  "negatives": [
+    {
+      "name": "a model name",
+      "value": "claude-sonnet-5",
+      "classes": [],
+      "redacted": "claude-sonnet-5"
+    },
+    {
+      "name": "a digest",
+      "value": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "classes": [],
+      "redacted": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+    },
+    {
+      "name": "a job title",
+      "value": "Staff Engineer",
+      "classes": [],
+      "redacted": "Staff Engineer"
+    },
+    {
+      "name": "another job title",
+      "value": "Director of Platform",
+      "classes": [],
+      "redacted": "Director of Platform"
+    },
+    {
+      "name": "a place name",
+      "value": "San Francisco",
+      "classes": [],
+      "redacted": "San Francisco"
+    },
+    {
+      "name": "a due date",
+      "value": "due date: 12/03/2026",
+      "classes": [],
+      "redacted": "due date: 12/03/2026"
+    },
+    {
+      "name": "a weekday",
+      "value": "born on Tuesday",
+      "classes": [],
+      "redacted": "born on Tuesday"
+    },
+    {
+      "name": "a year in prose",
+      "value": "the 2026 roadmap",
+      "classes": [],
+      "redacted": "the 2026 roadmap"
+    },
+    {
+      "name": "a small number",
+      "value": "order 42 shipped",
+      "classes": [],
+      "redacted": "order 42 shipped"
+    },
+    {
+      "name": "an honorific with no name",
+      "value": "Ask the Doctor",
+      "classes": [],
+      "redacted": "Ask the Doctor"
+    },
+    {
+      "name": "a street with no postcode",
+      "value": "221 Baker Street",
+      "classes": [],
+      "redacted": "221 Baker Street"
+    },
+    {
+      "name": "an unchecksummed iban shape",
+      "value": "GB82 WEST AAAA BBBB CCCC DD",
+      "classes": [],
+      "redacted": "GB82 WEST AAAA BBBB CCCC DD"
+    },
+    {
+      "name": "a version string",
+      "value": "v1.2.3-rc4",
+      "classes": [],
+      "redacted": "v1.2.3-rc4"
+    },
+    {
+      "name": "a short identifier",
+      "value": "ORD-1234",
+      "classes": [],
+      "redacted": "ORD-1234"
+    },
+    {
+      "name": "a digits-only uuid",
+      "value": "step 00000000-0000-4000-8000-000000000031",
+      "classes": [],
+      "redacted": "step 00000000-0000-4000-8000-000000000031"
+    }
+  ]
+}

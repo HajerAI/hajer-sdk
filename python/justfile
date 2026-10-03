@@ -1,0 +1,72 @@
+# Keep commands on the installed locked environment: `uv run` never syncs behind your back, so the
+# environment a gate ran against is the one `just sync` put there.
+export UV_NO_SYNC := "1"
+
+# List all recipes
+default:
+    @just --list
+
+# Install / sync dependencies. This is a customer's first command, so it has to work in a clean
+# checkout. It carried `--no-build` for wheel-only dependency hygiene and that refused the *project*:
+# `hajer==0.1.0 @ editable+.` has no binary distribution because it is the thing being built, and uv
+# has no way to say "no builds except mine". A failed sync then cascaded — `UV_NO_SYNC=1` above means
+# the next `just check` cannot find ruff at all. Every dependency in `uv.lock` publishes wheels, so
+# the flag was buying nothing that a locked resolution does not already give.
+# `--all-extras`: the provider-surface and fail-safe tests import the real `openai`, `anthropic` and OpenTelemetry
+# SDK and skip without them, so a gate run on a bare sync passed with 232 of them skipped.
+sync:
+    uv sync --locked --all-extras
+
+# Format with ruff
+fmt:
+    uv run ruff format hajer tests scripts
+
+# Lint and auto-fix with ruff
+lint:
+    uv run ruff check hajer tests scripts --fix
+
+# Type check with basedpyright (strict, no `Any`)
+typecheck:
+    uv run basedpyright
+
+# Dead-code scan with vulture
+deadcode:
+    uv run vulture
+
+# Dependency hygiene with deptry (unused / missing / transitive imports)
+deps:
+    uv run deptry .
+
+# Fail if uv.lock is out of date with pyproject.toml
+lock-check:
+    uv lock --check
+
+# Run every quality gate
+check: fmt lint typecheck deadcode deps lock-check contract-check
+
+# Run the test suite (pass extra pytest args, e.g. `just test -k wrap`)
+test *args:
+    uv run pytest {{ args }}
+
+# After the platform's API moves: `contract/openapi.json` -> hajer/_wire.py.
+# Generated; never hand-edited; committed with the snapshot that moved it.
+contract-refresh:
+    uv run python scripts/generate_wire.py --write
+
+# Non-mutating: hajer/_wire.py is what the generator emits from `contract/openapi.json`.
+# `hajer/_rules.py` and `hajer/_checksums.py` are generated too, from the platform's redaction catalog;
+# their generators and drift check run in the platform repository (`contract/README.md`).
+contract-check:
+    uv run python scripts/generate_wire.py --check
+
+# Build the sdist and wheel into dist/
+build:
+    uv build --out-dir dist
+
+# What CI runs: non-mutating checks + tests
+ci:
+    uv lock --check
+    uv run ruff format --check hajer tests scripts
+    uv run ruff check hajer tests scripts
+    just typecheck deadcode deps contract-check
+    just test

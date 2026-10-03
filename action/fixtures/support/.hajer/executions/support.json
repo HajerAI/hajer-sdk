@@ -1,0 +1,22 @@
+{
+  "suiteId": "fixture-support",
+  "suiteVersion": 1,
+  "suiteDigest": "sha256:715145fdd3092aa4030bd4cbfbb63a7f4abf0f0e80bcf8267bef71c774bbfa71",
+  "cases": {
+    "fixture-ticket": {
+      "adapter": {"module": "customer", "qualname": "classify", "constructor": "NONE", "input": "SINGLE"},
+      "input": "ticket",
+      "boundaries": [{
+        "method": "POST",
+        "scheme": "https",
+        "host": "api.openai.com",
+        "path": "/v1/chat/completions",
+        "status": 200,
+        "body": "{\"answer\":\"high\"}",
+        "bodyDigest": "sha256:ac8b5cab67fea04abc78b23a51b4fe16913378dc9015bcc293b30ce508999d09",
+        "requestBodyDigest": "sha256:14069429150abcbf244c4c2fb2c4c46a49c93ca9457263ecd9ebb176de3a58bb",
+        "contentType": "application/json"
+      }]
+    }
+  }
+}

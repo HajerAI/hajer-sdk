@@ -1,0 +1,1835 @@
+{
+  "$comment": "Shared vectors for the qualification rule. The Hajer platform and the SDK's pytest plugin read them. Labels only: nothing passes, fails or blocks on a label, and a qualified label says the verdict settled, not that it is S.",
+  "rule": "qualification-rule-v1",
+  "maxRepeats": 5,
+  "minAgreeing": 3,
+  "symbols": {
+    "S": "SATISFIES: the check held on this attempt (the plugin's PASS)",
+    "V": "VIOLATES: the check was violated on this attempt (the plugin's FAIL)",
+    "U": "UNKNOWN: any other reading (unscored, UNABLE_TO_VERIFY, or a replay whose request no longer matches its recording). It spends an attempt and never counts toward agreement"
+  },
+  "labels": {
+    "qualified": "at least minAgreeing (3) counted attempts, all equal, S or V",
+    "not_yet": "neither qualified nor flaky",
+    "flaky": "both S and V appear among the attempts"
+  },
+  "repeat": "true when another attempt is due: the label is not_yet and fewer than maxRepeats attempts were made",
+  "count": 363,
+  "vectors": [
+    {
+      "attempts": "S",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "V",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "U",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "US",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "USS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "USV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UVU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SSSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "VUUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "USSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "USSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "USVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "USUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UVUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUSS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUVU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUUS",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUUV",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "UUUU",
+      "label": "not_yet",
+      "repeat": true
+    },
+    {
+      "attempts": "SSSSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSSU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSUS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSSUU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUSU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUUS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SSUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SVUUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSSU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSUS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUSUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUSU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUUS",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "SUUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VSUUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVVU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVUV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVVUU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUVU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUUV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VVUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVVU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVUV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VUVUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUVU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUUV",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "VUUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "USSSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "USSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSSU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "USSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSUS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "USSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USSUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "USVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USVUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "USUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUSU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "USUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUUS",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "USUUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "USUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVSUU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVVU",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVUV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UVVUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUVU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUUV",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UVUUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSSS",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSSU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSVV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSVU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSUS",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSUV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUSUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVSS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVSU",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVVV",
+      "label": "qualified",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVVU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVUS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVUV",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUVUU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUSS",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUSV",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUSU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUVS",
+      "label": "flaky",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUVV",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUVU",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUUS",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUUV",
+      "label": "not_yet",
+      "repeat": false
+    },
+    {
+      "attempts": "UUUUU",
+      "label": "not_yet",
+      "repeat": false
+    }
+  ]
+}

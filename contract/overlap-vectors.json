@@ -1,0 +1,5 @@
+[
+  {"spec": {"version": 1, "known_values": {"PERSON": ["Ada", "Ada Lovelace"]}}, "input": "Ada Lovelace", "expected": "[redacted:PERSON]"},
+  {"spec": {"version": 1, "known_values": {"PERSON": ["Ada Lovelace", "Ada"]}}, "input": "Ada Lovelace", "expected": "[redacted:PERSON]"},
+  {"spec": {"version": 1, "known_values": {"PERSON": ["Ada Smith", "Smith LLC"]}}, "input": "Ada Smith LLC", "expected": "[redacted:PERSON]"}
+]

@@ -1,0 +1,57 @@
+"""The fixture application's one workflow: a route planner with two phases and a sink.
+
+Written so that the *wire* and the *tree* can be compared on a repository whose counts are known by
+construction. Four things it has on purpose:
+
+* the prompt is a **file beside this module**, read through ``Path(__file__).parent`` — the shape the
+  static reader's byte budget omits first and the shape R12 REACH admits outside it;
+* the tools are **two classes** in another module, so a schema warrant has a place in the tree to
+  resolve to;
+* the phases are a **registry keyed by mode**, and the two keys bind different tool sets — which is
+  what makes two wire scopes rather than one;
+* the consumer **slices** the reply, so the recorded reads are a real sink and not a traversal.
+"""
+
+from pathlib import Path
+
+from depotapp.tools import CheckCapacity, ProposeRoute
+
+PROMPT_PATH = Path(__file__).parent / "prompt.md"
+
+# The phase registry: each mode binds its own tool set, and the difference is the point.
+PHASES = {
+    "initial": (CheckCapacity, ProposeRoute),
+    "reflect": (ProposeRoute,),
+}
+
+
+def load_prompt():
+    """The instructions, read from the file beside this module."""
+    return PROMPT_PATH.read_text(encoding="utf-8")
+
+
+class RoutePlanner:
+    """The workflow. `plan` is the hot spot; `submit` is its sink."""
+
+    def __init__(self, client):
+        self.client = client
+
+    def plan(self, depot, mode, requested_stops):
+        """Ask the model for a route in this mode, take the first few stops, and submit it."""
+        tools = [held.SCHEMA for held in PHASES[mode]]
+        answer = self.client.messages.create(
+            model="fixture-model",
+            max_tokens=512,
+            system=load_prompt(),
+            tools=tools,
+            messages=[{"role": "user", "content": f"Plan a route from {depot} for {requested_stops} stops."}],
+        )
+        route = answer.content[0].input
+        stops = route["stops"][:5]
+        grade = route["grade"]
+        return submit(depot=depot, stops=stops, grade=grade)
+
+
+def submit(*, depot, stops, grade):
+    """The sink: what leaves the application."""
+    return {"depot": depot, "stops": list(stops), "grade": grade}

@@ -1,0 +1,48 @@
+name: Hajer suites
+description: Run the committed Hajer suites against your application and summarise each check in the job summary.
+inputs:
+  suites-dir:
+    description: Committed suite directory inside the customer checkout.
+    required: false
+    default: .hajer/suites
+  live:
+    description: Opt in to metered provider calls. Requires HAJER_CI_BUDGET_MICROUSD and the provider key.
+    required: false
+    default: "false"
+  blocking:
+    description: Opt in to failing the job for code-check or execution failures. Model judgments remain advisory.
+    required: false
+    default: "false"
+  artifact-name:
+    description: Optional unique suite artifact name; the default generates an invocation-specific name.
+    required: false
+  upload:
+    description: Upload compact receipts using HAJER_API_KEY, HAJER_TEAM_ID and HAJER_PROJECT_ID.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Run customer suites and write CI summary
+      continue-on-error: ${{ inputs.blocking != 'true' }}
+      shell: bash
+      env:
+        HAJER_SUITES_DIR: ${{ inputs.suites-dir }}
+        HAJER_SUITES_LIVE: ${{ inputs.live }}
+        HAJER_SUITES_UPLOAD: ${{ inputs.upload }}
+        HAJER_CI_BUDGET_FILE: ${{ runner.temp }}/hajer-provider-spend.sqlite3
+      run: bash "$GITHUB_ACTION_PATH/run-suites.sh"
+    - name: Name this invocation's suite artifact
+      if: ${{ always() }}
+      id: suite-artifact-name
+      shell: bash
+      run: python -c "import uuid; print('suffix=' + str(uuid.uuid4()))" >> "$GITHUB_OUTPUT"
+    - name: Keep compact suite results and provider spend reservations
+      if: ${{ always() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: ${{ inputs.artifact-name || format('hajer-results-{0}-{1}-{2}', github.run_id, github.run_attempt, steps.suite-artifact-name.outputs.suffix) }}
+        path: |
+          ${{ runner.temp }}/hajer-suite-results.json
+          ${{ runner.temp }}/hajer-provider-spend.sqlite3
+        if-no-files-found: warn

@@ -1,0 +1,2139 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hajer API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/teams/{team_id}/verify": {
+      "post": {
+        "description": "The claim is exactly \"this supplied payload satisfies these checks against this supplied evidence\".",
+        "operationId": "verify_api_teams__team_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOut"
+                }
+              }
+            },
+            "description": "Recorded and queued: the remaining deadline left no room to answer inline"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Payload larger than a declared ingest bound"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Apply a pinned verifier to one supplied tuple and answer inside the caller's deadline",
+        "tags": [
+          "verifications"
+        ]
+      }
+    },
+    "/api/teams/{team_id}/observe": {
+      "post": {
+        "description": "All or nothing: a submission this route refuses takes the whole flush with it.",
+        "operationId": "observe_api_teams__team_id__observe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObserveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveAcceptedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Payload larger than a declared ingest bound"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Record a flush of tuples off the response path and queue their verification",
+        "tags": [
+          "verifications"
+        ]
+      }
+    },
+    "/api/teams/{team_id}/observations": {
+      "get": {
+        "description": "Compact rows: what arrived and when, never the request, the output or the evidence it carried.",
+        "operationId": "list_observations_api_teams__team_id__observations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive: rows recorded at or after this instant (one flush shares an instant)",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive: rows recorded at or after this instant (one flush shares an instant)",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Clipped to INGEST_OBSERVATIONS_PAGE_MAX",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Clipped to INGEST_OBSERVATIONS_PAGE_MAX",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationRowOut"
+                  },
+                  "title": "Response List Observations Api Teams  Team Id  Observations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Payload larger than a declared ingest bound"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "The observations this team has recorded, oldest first \u2014 the tail",
+        "tags": [
+          "verifications"
+        ]
+      }
+    },
+    "/api/teams/{team_id}/observations/{observation_id}/assessment": {
+      "get": {
+        "description": "``accepted`` carries no status: an absent answer is never served as an unavailable one.",
+        "operationId": "get_observation_assessment_api_teams__team_id__observations__observation_id__assessment_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "title": "Observation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolledAssessmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Payload larger than a declared ingest bound"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "The assessment for one recorded observation, or the receipt saying it has none yet",
+        "tags": [
+          "verifications"
+        ]
+      }
+    },
+    "/api/teams/{team_id}/projects/{project_id}/suite-runs/execution-inputs": {
+      "post": {
+        "operationId": "read_private_suite_inputs_api_teams__team_id__projects__project_id__suite_runs_execution_inputs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrivateSuiteInputsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateSuiteInputsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired bearer token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not found, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflicts with existing state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "A dependency (database, identity provider) is unavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read privacy-approved traffic inputs for exact committed suite bytes and an admitted CI revision",
+        "tags": [
+          "suite-runs"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Always 200 while the process is up, and it says which process and which database.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AssessmentOut": {
+        "description": "What the SDK hands the application. A projection of the record, losing nothing it can act on.\n\n``shadow`` is a fact about trust rather than about the answer: a shadow verifier's assessment is\ncomputed and recorded in full and the caller is told ``unavailable{SHADOW}``, because nothing here\nhas been qualified on this team's own data yet.\n\n``seam`` is empty on a real answer. It is filled when the answer stands in for work this branch\ndoes not do, and it names what will do it \u2014 so a reader is never left to infer why an admitted\ntuple came back unavailable.",
+        "properties": {
+          "checkOutcomes": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationCheckOutcomeOut"
+            },
+            "title": "Checkoutcomes",
+            "type": "array"
+          },
+          "costMicrousd": {
+            "title": "Costmicrousd",
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationFindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "latencyMs": {
+            "title": "Latencyms",
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "missingEvidence": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationMissingEvidenceOut"
+            },
+            "title": "Missingevidence",
+            "type": "array"
+          },
+          "observationId": {
+            "title": "Observationid",
+            "type": "string"
+          },
+          "seam": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seam"
+          },
+          "shadow": {
+            "title": "Shadow",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VerificationStatus"
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verifier": {
+            "title": "Verifier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "unavailableReason",
+          "shadow",
+          "verifier",
+          "observationId",
+          "checkOutcomes",
+          "findings",
+          "missingEvidence",
+          "costMicrousd",
+          "latencyMs",
+          "seam",
+          "limitations"
+        ],
+        "title": "AssessmentOut",
+        "type": "object"
+      },
+      "CallerFrameIn": {
+        "additionalProperties": false,
+        "description": "One application frame above the SDK on a captured call: where the call was made from.\n\nR12's OBSERVED rule joins a captured provider request to a hot spot by *the frame the SDK\nrecorded*, so without this a stored prompt is a prompt with no address. Locations only \u2014 a\nmodule, a qualified name, a file and a line \u2014 and never a value the frame held.",
+        "properties": {
+          "file": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "File",
+            "type": "string"
+          },
+          "fileDigest": {
+            "anyOf": [
+              {
+                "maxLength": 71,
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filedigest"
+          },
+          "line": {
+            "default": 0,
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Line",
+            "type": "integer"
+          },
+          "module": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Module",
+            "type": "string"
+          },
+          "qualname": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Qualname",
+            "type": "string"
+          }
+        },
+        "title": "CallerFrameIn",
+        "type": "object"
+      },
+      "CheckReason": {
+        "enum": [
+          "satisfied",
+          "violated",
+          "unsupported",
+          "invalid",
+          "not_applicable",
+          "missing_evidence"
+        ],
+        "type": "string"
+      },
+      "ClaimedCaseKeySource": {
+        "enum": [
+          "CALLER",
+          "DERIVED_CLIENT"
+        ],
+        "type": "string"
+      },
+      "ClientRedactionIn": {
+        "additionalProperties": false,
+        "description": "What the SDK removed before sending, as the client reported it.\n\nA **claim by the client**: the server never saw the values and cannot verify the counts. That is why\n``catalog`` is required \u2014 a report saying \"one CARD\" could not be re-read after the rules changed, and\nwith the catalog named a stored observation says which rule set was in force in the customer's own\nprocess.\n\n``degraded`` is the sentence the client wrote when its own pass could not complete: an unknown\nvalidator, a malformed rule, or a document past one of its budgets. Absent when the pass ran whole. It\nreaches the assessment's ``limitations``, because a caller who believes their payload was redacted and\nwhose pass degraded has to be told.",
+        "properties": {
+          "catalog": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Catalog",
+            "type": "string"
+          },
+          "countsByClass": {
+            "items": {
+              "$ref": "#/components/schemas/RedactionCountIn"
+            },
+            "maxItems": 32,
+            "title": "Countsbyclass",
+            "type": "array"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          }
+        },
+        "required": [
+          "catalog"
+        ],
+        "title": "ClientRedactionIn",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "description": "Machine-readable cause on the JSON error envelope (``ErrorOut.code``).",
+        "enum": [
+          "BAD_REQUEST",
+          "AUTH_FAILED",
+          "UNAUTHORIZED",
+          "FORBIDDEN",
+          "NOT_FOUND",
+          "CONFLICT",
+          "PAYLOAD_TOO_LARGE",
+          "VALIDATION_ERROR",
+          "HTTP_ERROR",
+          "INTERNAL_ERROR",
+          "SERVICE_UNAVAILABLE",
+          "GITHUB_CONNECTION_REJECTED",
+          "SECRET_KEY_UNAVAILABLE",
+          "ONBOARDING_ATTESTATION_REQUIRED"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "ErrorOut": {
+        "description": "The one JSON error envelope \u2014 built by ``app/core/exception_handlers.py`` and declared on\nevery route's error responses through ``app.core.openapi.error_responses``.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "correlationId": {
+            "title": "Correlationid",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "statusCode": {
+            "title": "Statuscode",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "statusCode",
+          "correlationId"
+        ],
+        "title": "ErrorOut",
+        "type": "object"
+      },
+      "EvidenceStampIn": {
+        "additionalProperties": false,
+        "description": "What the caller alone knows about one evidence field: when it was observed, and how whole.\n\nA field whose contract sets ``maxAgeSeconds`` cannot be satisfied without ``observedAt`` \u2014 an\nunknown age is not freshness \u2014 and a field the SDK clipped cannot satisfy a contract that requires\na complete value.",
+        "properties": {
+          "completeness": {
+            "default": "COMPLETE",
+            "enum": [
+              "COMPLETE",
+              "PARTIAL",
+              "MISSING",
+              "UNKNOWN"
+            ],
+            "title": "Completeness",
+            "type": "string"
+          },
+          "observedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observedat"
+          },
+          "path": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "EvidenceStampIn",
+        "type": "object"
+      },
+      "HealthOut": {
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/InstanceOut"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "version",
+          "instance"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      },
+      "IngestMode": {
+        "enum": [
+          "VERIFY",
+          "OBSERVE"
+        ],
+        "type": "string"
+      },
+      "InstanceOut": {
+        "description": "Which backend answered: the database it is pointed at, and this process.\n\nThe *name* of the database and nothing else from its URL \u2014 no user, no password, no host \u2014 because\nthis probe is unauthenticated. It exists because an operator's script cannot otherwise tell a backend\nit just started from one that was already listening on the port (finding F-VF-1), and a run that\nreads its rows out of a different database than the one it thinks it is using has proved nothing.",
+        "properties": {
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "process": {
+            "title": "Process",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database",
+          "process"
+        ],
+        "title": "InstanceOut",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "MissingEvidenceReason": {
+        "enum": [
+          "ABSENT",
+          "REDACTED",
+          "TRUNCATED",
+          "STALE",
+          "INVALID"
+        ],
+        "type": "string"
+      },
+      "ObservationRowOut": {
+        "description": "One recorded observation, as a line in a tail. Compact on purpose: what arrived, not what it said.\n\nEverything here is a fact about the *record* \u2014 when it landed, which mode recorded it, which verifier\nit named (``null`` for an attach-mode observation), what the first model-call receipt says the provider\nand model were when the SDK sent bytes to read, how much redaction removed and what ingest's reading\nof the tuple was. Not the request, not the output, not the evidence: a list route is how somebody\nwatches traffic arrive, and the tuple itself is customer data that no listing needs to carry.\n\n``provider`` and ``model`` are ``null`` when the wrapped calls arrived as summaries rather than\ncaptures, because then no receipt exists and the summary's word for it is not a reading (S3-2).\n\n``caseKey`` and ``caseKeySource`` are here because a tail is where somebody sees whether their\nattempts are landing in one case at all \u2014 the night's repeatability gate read ``NOT_APPLICABLE`` on\nevery live run and nothing in the listing would have said why.",
+        "properties": {
+          "assessed": {
+            "title": "Assessed",
+            "type": "boolean"
+          },
+          "caseKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casekey"
+          },
+          "caseKeySource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casekeysource"
+          },
+          "clientRedactions": {
+            "title": "Clientredactions",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "disposition": {
+            "title": "Disposition",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/IngestMode"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "rawExpiresAt": {
+            "format": "date-time",
+            "title": "Rawexpiresat",
+            "type": "string"
+          },
+          "redactedClasses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Redactedclasses",
+            "type": "array"
+          },
+          "redactions": {
+            "title": "Redactions",
+            "type": "integer"
+          },
+          "shadow": {
+            "title": "Shadow",
+            "type": "boolean"
+          },
+          "verifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifier"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "mode",
+          "origin",
+          "verifier",
+          "provider",
+          "model",
+          "caseKey",
+          "caseKeySource",
+          "clientRedactions",
+          "redactions",
+          "redactedClasses",
+          "disposition",
+          "shadow",
+          "assessed",
+          "rawExpiresAt"
+        ],
+        "title": "ObservationRowOut",
+        "type": "object"
+      },
+      "ObserveAcceptedOut": {
+        "description": "The receipt for one flush: the id of every observation the server took, in the order sent.\n\n``accepted`` is the whole claim. Nothing has been verified \u2014 the observations are recorded and\nqueued, and the assessment for each arrives at its own observation id.",
+        "properties": {
+          "observationIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Observationids",
+            "type": "array"
+          },
+          "state": {
+            "const": "accepted",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "observationIds"
+        ],
+        "title": "ObserveAcceptedOut",
+        "type": "object"
+      },
+      "ObserveIn": {
+        "additionalProperties": false,
+        "description": "One ``observe`` flush: the observations the SDK's local queue batched, in the order it sent them.\n\nAll or nothing. The request commits through ``get_db``, so a submission this route refuses takes\nthe whole flush with it and the SDK's queue retries the batch \u2014 which is the behaviour a caller can\nreason about, unlike a partial acceptance whose gaps only the server knows about.\n\n``environment`` tags the whole flush: every observation that names none of its own takes it, and one that\nnames its own keeps it.",
+        "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/VerifyIn"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Observations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observations"
+        ],
+        "title": "ObserveIn",
+        "type": "object"
+      },
+      "ObservedOrigin": {
+        "enum": [
+          "TARGET_SELF_REPORT",
+          "BROKER"
+        ],
+        "type": "string"
+      },
+      "PolledAssessmentOut": {
+        "description": "The answer to ``GET /observations/{observation_id}/assessment``, whether or not there is one.\n\n``state`` is ``accepted`` while the tuple is recorded and no verifier has answered yet, and\n``assessed`` once one has. In the first case ``status`` is absent, which is exactly how the SDK's\n``receipt.poll()`` reads \"not yet\": it parses an assessment or it gets nothing, and an absent\nstatus is never reported to an application as an answer.\n\n``verifier`` is ``null`` for an observation that named none. Polling one answers ``accepted`` for as\nlong as it exists \u2014 not because the answer is late, but because there is no verifier to give one, and\nthe ``seam`` says so in words.\n\n``judgeReceipts`` is F-VF-5: the semantic checks of a queued run cost money, and until now the\nonly place that money appeared was a JSONB column nobody outside the product could read. A team\npolling its own observation is now told what its verification spent and on which route.",
+        "properties": {
+          "checkOutcomes": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationCheckOutcomeOut"
+            },
+            "title": "Checkoutcomes",
+            "type": "array"
+          },
+          "costMicrousd": {
+            "default": 0,
+            "title": "Costmicrousd",
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationFindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "judgeReceipts": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationJudgeReceiptOut"
+            },
+            "title": "Judgereceipts",
+            "type": "array"
+          },
+          "latencyMs": {
+            "default": 0,
+            "title": "Latencyms",
+            "type": "integer"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "missingEvidence": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationMissingEvidenceOut"
+            },
+            "title": "Missingevidence",
+            "type": "array"
+          },
+          "observationId": {
+            "title": "Observationid",
+            "type": "string"
+          },
+          "seam": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seam"
+          },
+          "shadow": {
+            "default": false,
+            "title": "Shadow",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "accepted",
+              "assessed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifier"
+          }
+        },
+        "required": [
+          "state",
+          "observationId"
+        ],
+        "title": "PolledAssessmentOut",
+        "type": "object"
+      },
+      "PrivateSuiteInputsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "maxLength": 40,
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Revision",
+            "type": "string"
+          },
+          "suiteDigest": {
+            "maxLength": 71,
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Suitedigest",
+            "type": "string"
+          },
+          "suiteId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Suiteid",
+            "type": "string"
+          },
+          "suiteVersion": {
+            "minimum": 1.0,
+            "title": "Suiteversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "suiteId",
+          "suiteVersion",
+          "suiteDigest",
+          "revision"
+        ],
+        "title": "PrivateSuiteInputsIn",
+        "type": "object"
+      },
+      "PrivateSuiteInputsOut": {
+        "properties": {
+          "executionDocument": {
+            "maxLength": 1048576,
+            "title": "Executiondocument",
+            "type": "string"
+          },
+          "revision": {
+            "maxLength": 40,
+            "title": "Revision",
+            "type": "string"
+          },
+          "unavailableCaseIds": {
+            "items": {
+              "maxLength": 256,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Unavailablecaseids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "executionDocument",
+          "unavailableCaseIds",
+          "revision"
+        ],
+        "title": "PrivateSuiteInputsOut",
+        "type": "object"
+      },
+      "ProviderHost": {
+        "maxLength": 261,
+        "pattern": "^(?:\\[[0-9A-Fa-f:.]{2,45}\\]|[^\\s:/\\\\\\[\\]@?#]{1,253})(?::[0-9]{1,5})?$",
+        "type": "string"
+      },
+      "RedactionCountIn": {
+        "additionalProperties": false,
+        "description": "How many values of one class the client removed. A count, never a value.\n\nThe key is ``category`` rather than ``class``. Two reasons, and they agree: ``class`` is a Python\nkeyword, so no generated client model can carry a field named after it (the SDK's wire generator emits\n`class: str`, which does not parse); and ``category`` is the word the accepted DX row fixes for exactly\nthis thing on the SDK side (`RedactionEntry.category`, never ``klass``). The service's own redaction\nreceipt spells it ``class`` inside ``redaction.countsByClass`` because that shape predates this and is\nstored data; the client's report is new and spells it the way both sides can read.",
+        "properties": {
+          "category": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "count": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "count"
+        ],
+        "title": "RedactionCountIn",
+        "type": "object"
+      },
+      "SdkIdentityIn": {
+        "additionalProperties": false,
+        "description": "Which client sent this tuple. Recorded, because a wire bug is a client version.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "SdkIdentityIn",
+        "type": "object"
+      },
+      "UnavailableReason": {
+        "enum": [
+          "SHADOW",
+          "DEADLINE",
+          "VERIFIER_UNKNOWN",
+          "JUDGE_UNAVAILABLE",
+          "BUDGET_EXHAUSTED",
+          "INTERNAL"
+        ],
+        "type": "string"
+      },
+      "VerificationCheckOutcomeOut": {
+        "description": "One check's own answer, kept underneath the aggregate status.",
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "evidenceUsed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidenceused",
+            "type": "array"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/CheckReason"
+          }
+        },
+        "required": [
+          "check",
+          "reason",
+          "detail",
+          "evidenceUsed"
+        ],
+        "title": "VerificationCheckOutcomeOut",
+        "type": "object"
+      },
+      "VerificationFindingOut": {
+        "description": "A substantiated statement, naming the obligation it is about and the evidence it rests on.",
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "evidenceUsed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidenceused",
+            "type": "array"
+          },
+          "obligation": {
+            "title": "Obligation",
+            "type": "string"
+          },
+          "statement": {
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "obligation",
+          "check",
+          "statement",
+          "evidenceUsed"
+        ],
+        "title": "VerificationFindingOut",
+        "type": "object"
+      },
+      "VerificationJudgeReceiptOut": {
+        "description": "One judge call this assessment paid for: the lane, the route and what the ledger recorded.\n\nF-VF-5. It is a fact about the **request**, not a reading of the payload \u2014 which is why it is\nhere at all and why it crosses the shadow mask beside ``costMicrousd`` and ``latencyMs``. A\nverifier that has not qualified on this team's traffic still spent this team's money, and a\ndeveloper who cannot see that cannot reconcile a bill.\n\n``settledMicrousd`` is ``null`` when a settlement never landed. That is an unknown liability held\nat its reservation, never a zero, and ``costSource`` says which of the two the row is.\n``disposition`` is the provider call's own status (``COMPLETED``, ``REFUSED``, ``FAILED``,\n``UNKNOWN``); what the judge *said* stays in ``checkOutcomes``, behind the mask.",
+        "properties": {
+          "callId": {
+            "title": "Callid",
+            "type": "string"
+          },
+          "costSource": {
+            "title": "Costsource",
+            "type": "string"
+          },
+          "disposition": {
+            "title": "Disposition",
+            "type": "string"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "latencyMs": {
+            "title": "Latencyms",
+            "type": "integer"
+          },
+          "modelId": {
+            "title": "Modelid",
+            "type": "string"
+          },
+          "reservationMicrousd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservationmicrousd"
+          },
+          "routeId": {
+            "title": "Routeid",
+            "type": "string"
+          },
+          "settledMicrousd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settledmicrousd"
+          }
+        },
+        "required": [
+          "lane",
+          "callId",
+          "routeId",
+          "modelId",
+          "disposition",
+          "costSource",
+          "latencyMs"
+        ],
+        "title": "VerificationJudgeReceiptOut",
+        "type": "object"
+      },
+      "VerificationMissingEvidenceOut": {
+        "description": "One field the assessment needed and did not get, and which of the five reasons applies.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/MissingEvidenceReason"
+          }
+        },
+        "required": [
+          "field",
+          "reason",
+          "detail"
+        ],
+        "title": "VerificationMissingEvidenceOut",
+        "type": "object"
+      },
+      "VerificationStatus": {
+        "enum": [
+          "satisfied",
+          "violated",
+          "insufficient_evidence",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "VerifyIn": {
+        "additionalProperties": false,
+        "description": "One ``verify`` or ``observe`` submission \u2014 the wire form of ``VerifyEnvelope``.\n\n``deadlineMs`` is what is **left** of the caller's budget when the request arrived, not what they\nstarted with: the SDK owns the whole operation's clock and sends the remainder (\u00a79 finding E). An\n``OBSERVE`` submission carries none, because it is off the response path.\n\n``verifier`` is optional and ``null`` means exactly one thing: **no verifier**, so the tuple is\nrecorded and nothing is verified. That is what the SDK's attach mode sends for a provider call the\napplication never declared an obligation about (``hajer.attach()``). A ``VERIFY`` with no verifier is\nrefused here rather than in the engine, because a caller asking for an answer about nothing is a\nrequest error and not an ingest decision.",
+        "properties": {
+          "caseKey": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casekey"
+          },
+          "caseKeySource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimedCaseKeySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientRedaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientRedactionIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentCaptured": {
+            "default": false,
+            "title": "Contentcaptured",
+            "type": "boolean"
+          },
+          "deadlineMs": {
+            "anyOf": [
+              {
+                "maximum": 86400000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadlinems"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "evidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Evidence",
+            "type": "object"
+          },
+          "evidenceStamps": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceStampIn"
+            },
+            "maxItems": 64,
+            "title": "Evidencestamps",
+            "type": "array"
+          },
+          "idempotencyKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotencykey",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/IngestMode"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservedOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "request": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Request",
+            "type": "object"
+          },
+          "sdk": {
+            "$ref": "#/components/schemas/SdkIdentityIn"
+          },
+          "verifier": {
+            "anyOf": [
+              {
+                "maxLength": 140,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}@[1-9][0-9]{0,8}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifier"
+          },
+          "wrappedCalls": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WrappedCallCaptureIn"
+                },
+                {
+                  "$ref": "#/components/schemas/WrappedCallSummaryIn"
+                }
+              ]
+            },
+            "maxItems": 256,
+            "title": "Wrappedcalls",
+            "type": "array"
+          },
+          "wrappedCallsDropped": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Wrappedcallsdropped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "request",
+          "output",
+          "idempotencyKey",
+          "sdk"
+        ],
+        "title": "VerifyIn",
+        "type": "object"
+      },
+      "Wire": {
+        "enum": [
+          "OPENAI_CHAT_COMPLETIONS",
+          "OPENAI_RESPONSES",
+          "ANTHROPIC_MESSAGES"
+        ],
+        "type": "string"
+      },
+      "WorkflowHint": {
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+      },
+      "WrappedCallCaptureIn": {
+        "additionalProperties": false,
+        "description": "One provider request/response pair, as bytes. This is the shape that becomes a receipt.",
+        "properties": {
+          "callerFrames": {
+            "items": {
+              "$ref": "#/components/schemas/CallerFrameIn"
+            },
+            "maxItems": 8,
+            "title": "Callerframes",
+            "type": "array"
+          },
+          "durationMs": {
+            "maximum": 86400000.0,
+            "minimum": 0.0,
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "replyReads": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                "maxItems": 256,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replyreads"
+          },
+          "request": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Request",
+            "type": "object"
+          },
+          "responseBody": {
+            "maxLength": 1048576,
+            "title": "Responsebody",
+            "type": "string"
+          },
+          "responseStatus": {
+            "maximum": 599.0,
+            "minimum": 100.0,
+            "title": "Responsestatus",
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "streamed": {
+            "default": false,
+            "title": "Streamed",
+            "type": "boolean"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "wire": {
+            "$ref": "#/components/schemas/Wire"
+          },
+          "workflowHint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "wire",
+          "request",
+          "responseBody",
+          "responseStatus",
+          "startedAt",
+          "durationMs"
+        ],
+        "title": "WrappedCallCaptureIn",
+        "type": "object"
+      },
+      "WrappedCallSummaryIn": {
+        "additionalProperties": false,
+        "description": "What ``hajer.wrap(client)`` records without the bytes: the call, described.\n\nAdmitted and persisted; it produces no ``ModelCallReceipt``. Every field is what the SDK's own\n``WrappedCall.to_wire()`` emits, so a client that captures no content still has somewhere to put\nwhat it did observe.",
+        "properties": {
+          "api": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Api",
+            "type": "string"
+          },
+          "callerFrames": {
+            "items": {
+              "$ref": "#/components/schemas/CallerFrameIn"
+            },
+            "maxItems": 8,
+            "title": "Callerframes",
+            "type": "array"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "declaredTools": {
+            "items": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Declaredtools",
+            "type": "array"
+          },
+          "durationMs": {
+            "maximum": 86400000.0,
+            "minimum": 0.0,
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "errorType": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errortype"
+          },
+          "finishReason": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishreason"
+          },
+          "limitations": {
+            "items": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "messageCount": {
+            "default": 0,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Messagecount",
+            "type": "integer"
+          },
+          "messageRoles": {
+            "items": {
+              "maxLength": 32,
+              "type": "string"
+            },
+            "maxItems": 512,
+            "title": "Messageroles",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "providerHost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderHost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestSettings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Requestsettings",
+            "type": "object"
+          },
+          "responseId": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responseid"
+          },
+          "retries": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Retries",
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "streamChunks": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Streamchunks",
+            "type": "integer"
+          },
+          "streamComplete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streamcomplete"
+          },
+          "streamed": {
+            "default": false,
+            "title": "Streamed",
+            "type": "boolean"
+          },
+          "toolCalls": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "maxItems": 64,
+            "title": "Toolcalls",
+            "type": "array"
+          },
+          "toolResults": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "maxItems": 64,
+            "title": "Toolresults",
+            "type": "array"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Usage",
+            "type": "object"
+          },
+          "workflowHint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "api",
+          "startedAt",
+          "durationMs"
+        ],
+        "title": "WrappedCallSummaryIn",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Cognito access token from POST /api/auth/signin, or a team API key (hjk_...) on the routes a customer process authenticates with one.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  }
+}

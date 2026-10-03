@@ -1,0 +1,724 @@
+"""`wrap` — what it records, what it refuses to record, and the behaviour it must not change."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+from collections.abc import Iterable, Iterator
+from typing import cast
+
+import pytest
+
+import hajer
+from hajer import _payload
+from hajer._json import JsonObject
+from tests.conftest import as_async_stream, as_stream
+from tests.fakes import (
+    FakeAnthropic,
+    FakeAnthropicDelta,
+    FakeAnthropicEvent,
+    FakeAnthropicMessage,
+    FakeAnthropicUsage,
+    FakeAsyncAnthropic,
+    FakeAsyncOpenAI,
+    FakeAsyncStream,
+    FakeChatAnthropic,
+    FakeChatChunk,
+    FakeChatCompletion,
+    FakeChatDelta,
+    FakeChatStreamChoice,
+    FakeChoice,
+    FakeFunction,
+    FakeMessage,
+    FakeOpenAI,
+    FakeOpenAIUsage,
+    FakeResponse,
+    FakeResponseItem,
+    FakeStream,
+    FakeTextBlock,
+    FakeToolCall,
+    FakeToolUseBlock,
+    NotAProviderClient,
+    ProviderError,
+)
+
+QUIET = hajer.HajerSettings(capture_content=False)
+LOUD = hajer.HajerSettings(capture_content=True)
+# Raw capture is the widest setting there is, and it is the one an end-to-end run uses.
+RAW = hajer.HajerSettings(capture_content=True, capture_raw=True)
+
+
+def _chat_stream() -> FakeStream:
+    return FakeStream(
+        [
+            FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(content="he"))]),
+            FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(content="llo"))]),
+            FakeChatChunk(
+                choices=[FakeChatStreamChoice(delta=FakeChatDelta(), finish_reason="stop")],
+                usage=FakeOpenAIUsage(),
+            ),
+        ]
+    )
+
+
+class TestIdentityAndBehaviour:
+    def test_wrap_returns_the_same_object(self) -> None:
+        client = FakeOpenAI()
+        assert hajer.wrap(client, settings=QUIET) is client
+
+    def test_the_provider_object_is_returned_unchanged(self) -> None:
+        expected = FakeChatCompletion(id="chatcmpl-42")
+        client = hajer.wrap(FakeOpenAI(chat_script=[expected]), settings=QUIET)
+        assert client.chat.completions.create(model="gpt-fake-1", messages=[]) is expected
+
+    def test_the_provider_exception_is_re_raised_unchanged(self) -> None:
+        boom = ProviderError("rate limited")
+        client = hajer.wrap(FakeOpenAI(error=boom), settings=QUIET)
+        with pytest.raises(ProviderError) as raised:
+            client.chat.completions.create(model="gpt-fake-1", messages=[])
+        assert raised.value is boom
+        call = hajer.wrapped_calls()[0]
+        assert call.error == "rate limited"
+        assert call.error_type == "ProviderError"
+
+    async def test_the_async_provider_exception_is_re_raised_unchanged(self) -> None:
+        boom = ProviderError("overloaded")
+        client = hajer.wrap(FakeAsyncAnthropic(error=boom), settings=QUIET)
+        with pytest.raises(ProviderError) as raised:
+            await client.messages.create(model="claude-fake-1", messages=[])
+        assert raised.value is boom
+        assert hajer.wrapped_calls()[0].error_type == "ProviderError"
+
+    def test_the_caller_arguments_reach_the_provider_untouched(self) -> None:
+        client = hajer.wrap(FakeOpenAI(), settings=QUIET)
+        client.chat.completions.create(model="gpt-fake-1", messages=[{"role": "user", "content": "hi"}], seed=7)
+        assert client.completions.calls[0]["seed"] == 7
+        assert client.completions.calls[0]["model"] == "gpt-fake-1"
+
+    def test_wrapping_twice_instruments_once(self) -> None:
+        client = hajer.wrap(hajer.wrap(FakeOpenAI(), settings=QUIET), settings=QUIET)
+        client.chat.completions.create(model="gpt-fake-1", messages=[])
+        assert len(hajer.wrapped_calls()) == 1
+
+    def test_an_unrecognised_client_is_refused_rather_than_silently_ignored(self) -> None:
+        with pytest.raises(hajer.UnsupportedClientError):
+            hajer.wrap(NotAProviderClient(), settings=QUIET)
+
+
+class TestOpenAIChatCompletions:
+    def test_records_the_call_without_content(self) -> None:
+        response = FakeChatCompletion(
+            choices=[
+                FakeChoice(
+                    message=FakeMessage(
+                        content="the answer",
+                        tool_calls=[FakeToolCall(id="call-1", function=FakeFunction("lookup_order", '{"id":"o-1"}'))],
+                    ),
+                    finish_reason="tool_calls",
+                )
+            ]
+        )
+        client = hajer.wrap(FakeOpenAI(chat_script=[response]), settings=QUIET)
+        client.chat.completions.create(
+            model="gpt-fake-1",
+            messages=[
+                {"role": "user", "content": "where is my order"},
+                {"role": "tool", "tool_call_id": "call-0", "content": "shipped"},
+            ],
+            temperature=0.2,
+            tools=[{"type": "function", "function": {"name": "lookup_order"}}],
+        )
+        call = hajer.wrapped_calls()[0]
+        assert call.provider == "openai"
+        assert call.api == "chat.completions"
+        assert call.model == "gpt-fake-1"
+        assert call.request_settings["temperature"] == 0.2
+        assert call.declared_tools == ("lookup_order",)
+        assert call.message_count == 2
+        assert call.message_roles == ("user", "tool")
+        assert call.usage == {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+        assert call.tool_calls[0].name == "lookup_order"
+        assert call.tool_calls[0].id == "call-1"
+        assert call.tool_results[0].tool_use_id == "call-0"
+        assert call.finish_reason == "tool_calls"
+        assert call.response_id == "chatcmpl-1"
+        assert call.streamed is False
+        assert call.retries == 0
+        assert call.duration_ms >= 0
+
+    def test_content_is_absent_unless_opted_in(self) -> None:
+        response = FakeChatCompletion()
+        client = hajer.wrap(FakeOpenAI(chat_script=[response]), settings=QUIET)
+        client.chat.completions.create(model="gpt-fake-1", messages=[{"role": "user", "content": "secret"}])
+        call = hajer.wrapped_calls()[0]
+        assert call.content is None
+        assert "secret" not in repr(call)
+
+    def test_content_is_present_when_opted_in(self) -> None:
+        client = hajer.wrap(FakeOpenAI(chat_script=[FakeChatCompletion()]), settings=LOUD)
+        client.chat.completions.create(model="gpt-fake-1", messages=[{"role": "user", "content": "secret"}])
+        call = hajer.wrapped_calls()[0]
+        assert call.content is not None
+        assert "secret" in repr(call.content["messages"])
+        assert call.content["output"] == ["ok"]
+
+    def test_tool_arguments_are_content_and_follow_the_same_switch(self) -> None:
+        response = FakeChatCompletion(
+            choices=[
+                FakeChoice(
+                    message=FakeMessage(
+                        tool_calls=[FakeToolCall(id="c", function=FakeFunction("refund", '{"amount": 99}'))]
+                    )
+                )
+            ]
+        )
+        quiet = hajer.wrap(FakeOpenAI(chat_script=[response]), settings=QUIET)
+        quiet.chat.completions.create(model="m", messages=[])
+        assert hajer.wrapped_calls()[0].tool_calls[0].arguments is None
+        assert hajer.wrapped_calls()[0].tool_calls[0].name == "refund"
+
+
+class TestAsyncOpenAI:
+    async def test_async_chat_completion_is_returned_unchanged(self) -> None:
+        expected = FakeChatCompletion(id="chatcmpl-async")
+        client = hajer.wrap(FakeAsyncOpenAI(chat_script=[expected]), settings=QUIET)
+        returned = await client.chat.completions.create(model="gpt-fake-1", messages=[])
+        assert returned is expected
+        call = hajer.wrapped_calls()[0]
+        assert call.provider == "openai"
+        assert call.response_id == "chatcmpl-async"
+        assert call.streamed is False
+
+    async def test_async_streamed_chat_completion(self) -> None:
+        chunks: list[object] = [
+            FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(content="a"))]),
+            FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(), finish_reason="stop")]),
+        ]
+        stream = FakeAsyncStream(chunks)
+        client = hajer.wrap(FakeAsyncOpenAI(chat_script=[stream]), settings=QUIET)
+        returned = as_async_stream(await client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True))
+        assert [chunk async for chunk in returned] == chunks
+        call = hajer.wrapped_calls()[0]
+        assert call.streamed is True
+        assert call.stream_complete is True
+        assert call.finish_reason == "stop"
+
+
+class TestOpenAIResponses:
+    def test_records_a_responses_call(self) -> None:
+        response = FakeResponse(
+            output=[FakeResponseItem(type="function_call", name="send_email", call_id="fc-1", arguments="{}")]
+        )
+        client = hajer.wrap(FakeOpenAI(responses_script=[response]), settings=QUIET)
+        client.responses.create(model="gpt-fake-1", input=[{"role": "user", "content": "hi"}])
+        call = hajer.wrapped_calls()[0]
+        assert call.api == "responses"
+        assert call.tool_calls[0].name == "send_email"
+        assert call.finish_reason == "completed"
+        assert call.message_count == 1
+
+
+class TestAnthropicMessages:
+    def test_records_a_messages_call(self) -> None:
+        response = FakeAnthropicMessage(
+            content=[FakeTextBlock(text="hello"), FakeToolUseBlock(id="tu-1", name="lookup", input={"id": "o-1"})]
+        )
+        client = hajer.wrap(FakeAnthropic(script=[response]), settings=QUIET)
+        client.messages.create(
+            model="claude-fake-1",
+            max_tokens=256,
+            messages=[{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu-0", "is_error": False}]}],
+        )
+        call = hajer.wrapped_calls()[0]
+        assert call.provider == "anthropic"
+        assert call.api == "messages"
+        assert call.request_settings["max_tokens"] == 256
+        assert call.usage == {"input_tokens": 13, "output_tokens": 5}
+        assert call.tool_calls[0].name == "lookup"
+        assert call.tool_calls[0].arguments is None
+        assert call.tool_results[0].tool_use_id == "tu-0"
+        assert call.tool_results[0].is_error is False
+        assert call.finish_reason == "end_turn"
+
+    def test_the_beta_messages_surface_is_instrumented_too(self) -> None:
+        """A client that sends `betas` calls `beta.messages.create`, a different function entirely.
+
+        `langchain_anthropic` picks that branch whenever the payload carries `betas`, so an
+        uninstrumented `beta` would be a capture hole that looks exactly like a workflow making no model
+        calls at all.
+        """
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+        client.beta.messages.create(model="claude-fake-1", messages=[], betas=["some-beta"])
+        call = hajer.wrapped_calls()[0]
+        assert call.provider == "anthropic"
+        assert call.api == "messages"
+        assert call.model == "claude-fake-1"
+
+    async def test_async_messages(self) -> None:
+        client = hajer.wrap(FakeAsyncAnthropic(script=[FakeAnthropicMessage()]), settings=QUIET)
+        result = await client.messages.create(model="claude-fake-1", messages=[], max_tokens=16)
+        assert isinstance(result, FakeAnthropicMessage)
+        assert hajer.wrapped_calls()[0].model == "claude-fake-1"
+
+
+class TestStreaming:
+    def test_a_consumed_sync_stream_is_complete(self) -> None:
+        stream = _chat_stream()
+        client = hajer.wrap(FakeOpenAI(chat_script=[stream]), settings=QUIET)
+        returned = as_stream(client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True))
+        chunks = list(returned)
+        assert chunks == stream.chunks, "the chunks are the provider's own objects"
+        call = hajer.wrapped_calls()[0]
+        assert call.streamed is True
+        assert call.stream_complete is True
+        assert call.stream_chunks == 3
+        assert call.finish_reason == "stop"
+        assert call.usage["total_tokens"] == 18
+        assert call.content is None
+
+    def test_an_abandoned_sync_stream_is_incomplete(self) -> None:
+        client = hajer.wrap(FakeOpenAI(chat_script=[_chat_stream()]), settings=QUIET)
+        returned = as_stream(client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True))
+        iterator = iter(returned)
+        next(iterator)
+        returned.close()
+        call = hajer.wrapped_calls()[0]
+        assert call.stream_complete is False
+        assert call.stream_chunks == 1
+
+    def test_a_sync_stream_forwards_the_context_manager_and_closes_the_inner(self) -> None:
+        stream = _chat_stream()
+        client = hajer.wrap(FakeOpenAI(chat_script=[stream]), settings=QUIET)
+        with as_stream(client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True)) as returned:
+            assert list(returned) == stream.chunks
+        assert stream.closed is True
+        assert hajer.wrapped_calls()[0].stream_complete is True
+
+    def test_streamed_text_is_captured_only_when_opted_in(self) -> None:
+        client = hajer.wrap(FakeOpenAI(chat_script=[_chat_stream()]), settings=LOUD)
+        list(as_stream(client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True)))
+        content = hajer.wrapped_calls()[0].content
+        assert content is not None
+        assert content["streamedText"] == "hello"
+
+    def test_a_sync_stream_that_raises_is_incomplete_and_re_raises(self) -> None:
+        class Exploding(FakeStream):
+            def __iter__(self) -> Iterator[object]:
+                yield FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(content="x"))])
+                raise ProviderError("stream broke")
+
+        client = hajer.wrap(FakeOpenAI(chat_script=[Exploding([])]), settings=QUIET)
+        returned = as_stream(client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True))
+        with pytest.raises(ProviderError):
+            list(returned)
+        call = hajer.wrapped_calls()[0]
+        assert call.stream_complete is False
+        assert call.error == "stream broke"
+
+    async def test_a_consumed_async_stream_is_complete(self) -> None:
+        chunks: list[object] = [
+            FakeAnthropicEvent(delta=FakeAnthropicDelta(text="he")),
+            FakeAnthropicEvent(delta=FakeAnthropicDelta(text="llo"), stop_reason="end_turn"),
+            FakeAnthropicEvent(type="message_delta", usage=FakeAnthropicUsage(input_tokens=3, output_tokens=2)),
+        ]
+        stream = FakeAsyncStream(chunks)
+        client = hajer.wrap(FakeAsyncAnthropic(script=[stream]), settings=QUIET)
+        returned = as_async_stream(
+            await client.messages.create(model="claude-fake-1", messages=[], max_tokens=8, stream=True)
+        )
+        seen = [chunk async for chunk in returned]
+        assert seen == chunks
+        call = hajer.wrapped_calls()[0]
+        assert call.streamed is True
+        assert call.stream_complete is True
+        assert call.stream_chunks == 3
+        assert call.finish_reason == "end_turn"
+        assert call.usage == {"input_tokens": 3, "output_tokens": 2}
+
+    async def test_an_async_stream_forwards_aclose_and_records_incomplete(self) -> None:
+        stream = FakeAsyncStream([FakeAnthropicEvent(delta=FakeAnthropicDelta(text="a"))])
+        client = hajer.wrap(FakeAsyncAnthropic(script=[stream]), settings=QUIET)
+        returned = as_async_stream(
+            await client.messages.create(model="claude-fake-1", messages=[], max_tokens=8, stream=True)
+        )
+        await returned.aclose()
+        assert stream.closed is True
+        assert hajer.wrapped_calls()[0].stream_complete is False
+
+
+class TestContextAndBounds:
+    def test_two_calls_are_attached_to_the_next_verify(self) -> None:
+        client = hajer.wrap(FakeOpenAI(chat_script=[FakeChatCompletion(), FakeChatCompletion()]), settings=QUIET)
+        client.chat.completions.create(model="gpt-fake-1", messages=[])
+        client.chat.completions.create(model="gpt-fake-1", messages=[])
+        assert len(hajer.wrapped_calls()) == 2
+        hajer.clear_wrapped_calls()
+        assert hajer.wrapped_calls() == ()
+        assert hajer.wrapped_calls_dropped() == 0
+
+    def test_the_cap_keeps_the_first_and_counts_the_rest(self) -> None:
+        capped = hajer.HajerSettings(wrapped_calls_max=2)
+        client = hajer.wrap(FakeOpenAI(chat_script=[FakeChatCompletion() for _ in range(5)]), settings=capped)
+        for _ in range(5):
+            client.chat.completions.create(model="gpt-fake-1", messages=[])
+        assert len(hajer.wrapped_calls()) == 2
+        assert hajer.wrapped_calls_dropped() == 3
+
+    def test_to_wire_is_camel_case_and_carries_no_content_by_default(self) -> None:
+        client = hajer.wrap(FakeOpenAI(chat_script=[FakeChatCompletion()]), settings=QUIET)
+        client.chat.completions.create(model="gpt-fake-1", messages=[{"role": "user", "content": "hi"}])
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["provider"] == "openai"
+        assert wire["api"] == "chat.completions"
+        assert wire["messageRoles"] == ["user"]
+        assert wire["streamComplete"] is None
+        assert "content" not in wire
+
+
+class TestAFrameworkChatModel:
+    """`wrap(ChatAnthropic(...))`: the chat model carries no surface, its inner clients do.
+
+    The subject repository of the s0-s3 acceptance run injects a `ChatAnthropic` into its own agent and
+    the agent calls `bind_tools` on it, so the object the five inline lines can reach is the chat model
+    and never the provider client underneath. These tests pin the two things that have to keep being
+    true: the same object comes back (the agent holds a reference to it), and the call that leaves the
+    process is the one that is recorded.
+    """
+
+    def test_wrap_returns_the_same_chat_model(self) -> None:
+        model = FakeChatAnthropic()
+        assert hajer.wrap(model, settings=QUIET) is model
+
+    def test_the_sync_inner_client_is_recorded(self) -> None:
+        expected = FakeAnthropicMessage(id="msg-inner")
+        model = hajer.wrap(FakeChatAnthropic(script=[expected]), settings=QUIET)
+        assert model.invoke([{"role": "user", "content": "hi"}], max_tokens=64) is expected
+        call = hajer.wrapped_calls()[0]
+        assert call.provider == "anthropic"
+        assert call.api == "messages"
+        assert call.model == "claude-fake-1"
+        assert call.response_id == "msg-inner"
+        assert call.usage == {"input_tokens": 13, "output_tokens": 5}
+
+    async def test_the_async_inner_client_is_recorded(self) -> None:
+        model = hajer.wrap(FakeChatAnthropic(script=[FakeAnthropicMessage()]), settings=QUIET)
+        result = await model.ainvoke([])
+        assert isinstance(result, FakeAnthropicMessage)
+        assert hajer.wrapped_calls()[0].api == "messages"
+
+    def test_binding_tools_does_not_lose_the_instrumentation(self) -> None:
+        """The agent binds tools after `wrap`, and `bind_tools` returns the model, not a fresh client."""
+        model = hajer.wrap(FakeChatAnthropic(), settings=QUIET)
+        bound = model.bind_tools([{"name": "SubmitCriteria"}])
+        bound.invoke([])
+        assert len(hajer.wrapped_calls()) == 1
+
+    def test_the_provider_exception_still_arrives_unchanged(self) -> None:
+        boom = ProviderError("overloaded")
+        model = hajer.wrap(FakeChatAnthropic(error=boom), settings=QUIET)
+        with pytest.raises(ProviderError) as raised:
+            model.invoke([])
+        assert raised.value is boom
+        assert hajer.wrapped_calls()[0].error_type == "ProviderError"
+
+    def test_a_real_provider_client_is_still_instrumented_at_its_own_surface(self) -> None:
+        """A real provider client keeps its httpx client on `_client` too (the fake does as well); the
+        inner search must not shadow a surface the object itself already carries."""
+        client = FakeAnthropic()
+        assert getattr(client, "_client", None) is not None
+        wrapped = hajer.wrap(client, settings=QUIET)
+        wrapped.messages.create(model="claude-fake-1", messages=[])
+        assert len(hajer.wrapped_calls()) == 1
+
+
+class TestRawCapture:
+    """`HAJER_CAPTURE_RAW`: the provider's own documents, bounded, and never in place of the truth.
+
+    The service accepts two shapes for one wrapped call and they mean different things: a capture is
+    the bytes and becomes a `ModelCallReceipt`, a summary is a description and is counted as one. These
+    tests are about which shape goes out and what is in it, because that is the whole of the feature.
+    """
+
+    def test_raw_requires_content_capture(self) -> None:
+        with pytest.raises(hajer.HajerConfigError) as raised:
+            hajer.HajerSettings(capture_content=False, capture_raw=True)
+        assert "HAJER_CAPTURE_CONTENT" in str(raised.value)
+
+    def test_the_environment_reads_both_switches(self) -> None:
+        settings = hajer.HajerSettings.from_env(
+            {"HAJER_CAPTURE_CONTENT": "1", "HAJER_CAPTURE_RAW": "yes", "HAJER_WRAPPED_CALL_MAX_BYTES": "4096"}
+        )
+        assert settings.capture_raw
+        assert settings.wrapped_call_max_bytes == 4096
+
+    def test_off_by_default_even_with_content_on(self) -> None:
+        client = hajer.wrap(FakeAnthropic(), settings=LOUD)
+        client.messages.create(model="claude-fake-1", messages=[], max_tokens=16)
+        call = hajer.wrapped_calls()[0]
+        assert call.raw is None
+        assert "wire" not in call.to_wire()
+        assert call.to_wire()["provider"] == "anthropic"
+
+    def test_an_anthropic_call_ships_the_capture_shape(self) -> None:
+        client = hajer.wrap(FakeAnthropic(script=[FakeAnthropicMessage(id="msg-raw")]), settings=RAW)
+        client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": "hi"}], max_tokens=16)
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["wire"] == "ANTHROPIC_MESSAGES"
+        assert wire["responseStatus"] == 200
+        assert wire["truncated"] is False
+        assert wire["streamed"] is False
+        # The request document is what the caller passed, not the settings selection beside it.
+        request = wire["request"]
+        assert isinstance(request, dict)
+        assert request["max_tokens"] == 16
+        assert request["messages"] == [{"role": "user", "content": "hi"}]
+        # The response document is the provider's own, so the usage a receipt reads comes from it.
+        body = wire["responseBody"]
+        assert isinstance(body, str)
+        answered = json.loads(body)
+        assert answered["id"] == "msg-raw"
+        assert answered["usage"] == {"input_tokens": 13, "output_tokens": 5}
+        # None of the summary's keys are on the capture: the two shapes are disjoint.
+        assert "provider" not in wire
+        assert "usage" not in wire
+
+    def test_each_wire_is_named_the_way_the_service_names_it(self) -> None:
+        client = hajer.wrap(FakeOpenAI(), settings=RAW)
+        client.chat.completions.create(model="gpt-fake-1", messages=[])
+        client.responses.create(model="gpt-fake-1", input=[])
+        assert [call.to_wire()["wire"] for call in hajer.wrapped_calls()] == [
+            "OPENAI_CHAT_COMPLETIONS",
+            "OPENAI_RESPONSES",
+        ]
+
+    def test_a_response_over_the_bound_is_clipped_and_says_so(self) -> None:
+        long_answer = FakeAnthropicMessage(content=[FakeTextBlock(text="x" * 4_000)])
+        settings = hajer.HajerSettings(capture_content=True, capture_raw=True, wrapped_call_max_bytes=600)
+        client = hajer.wrap(FakeAnthropic(script=[long_answer]), settings=settings)
+        client.messages.create(model="claude-fake-1", messages=[], max_tokens=16)
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["truncated"] is True
+        body = wire["responseBody"]
+        assert isinstance(body, str)
+        assert 0 < len(body.encode("utf-8")) <= 600
+
+    def test_a_prompt_over_the_bound_keeps_its_head_tail_length_and_digest(self) -> None:
+        """In a real traffic run, 7 prompts of 44-51 KB were dropped whole. The text is clipped in its middle
+        instead, saying how long it was and what it hashed to, and the capture says it was clipped."""
+        prompt = "HEAD " + "m" * 50_000 + " TAIL"
+        settings = hajer.HajerSettings(capture_content=True, capture_raw=True)
+        client = hajer.wrap(FakeAnthropic(script=[FakeAnthropicMessage(id="msg-long")]), settings=settings)
+        client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": prompt}], max_tokens=16)
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["wire"] == "ANTHROPIC_MESSAGES", "still a capture, not a summary"
+        assert wire["truncated"] is False, "the service reads `truncated` as a clipped response; this one is whole"
+        assert any(note.startswith("CONTENT_TRUNCATED") for note in hajer.wrapped_calls()[0].limitations)
+        request = cast(JsonObject, wire["request"])
+        sent = cast(str, cast("list[JsonObject]", request["messages"])[0]["content"])
+        assert sent.startswith("HEAD m")
+        assert sent.endswith("m TAIL")
+        assert f"{len(prompt)} characters" in sent
+        assert hashlib.sha256(prompt.encode()).hexdigest() in sent
+        assert json.loads(cast(str, wire["responseBody"]))["id"] == "msg-long", "the answer still fits, whole"
+        size = len(json.dumps(request, separators=(",", ":")).encode()) + len(cast(str, wire["responseBody"]).encode())
+        assert size <= settings.wrapped_call_max_bytes
+
+    def test_a_long_prompt_is_clipped_in_the_summary_content_too(self) -> None:
+        prompt = "HEAD " + "m" * 50_000 + " TAIL"
+        client = hajer.wrap(FakeAnthropic(), settings=LOUD)
+        client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": prompt}], max_tokens=16)
+        call = hajer.wrapped_calls()[0]
+        content = json.dumps(call.to_wire()["content"], ensure_ascii=False, separators=(",", ":"))
+        assert "HEAD m" in content
+        assert "m TAIL" in content
+        assert len(content.encode()) <= LOUD.wrapped_call_max_bytes
+        assert any(limitation.startswith("CONTENT_TRUNCATED") for limitation in call.limitations)
+
+    def test_a_request_whose_shape_alone_does_not_fit_ships_as_a_summary_with_its_text_clipped(self) -> None:
+        """Past the smallest clip the capture still cannot fit: the summary carries the text's two ends."""
+        settings = hajer.HajerSettings(capture_content=True, capture_raw=True, wrapped_call_max_bytes=64)
+        client = hajer.wrap(FakeAnthropic(), settings=settings)
+        client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": "q" * 5_000}])
+        call = hajer.wrapped_calls()[0]
+        assert call.raw is None
+        wire = call.to_wire()
+        assert wire["provider"] == "anthropic"
+        assert wire["usage"] == {"input_tokens": 13, "output_tokens": 5}
+        assert "qqqq" in json.dumps(wire["content"]), "never the text dropped entirely"
+
+    def test_a_failed_call_with_a_status_captures_it(self) -> None:
+        client = hajer.wrap(FakeAnthropic(error=ProviderError("overloaded", status_code=529)), settings=RAW)
+        with pytest.raises(ProviderError):
+            client.messages.create(model="claude-fake-1", messages=[])
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["responseStatus"] == 529
+        body = wire["responseBody"]
+        assert isinstance(body, str)
+        assert json.loads(body)["error"]["type"] == "ProviderError"
+
+    def test_a_failed_call_with_no_status_ships_as_a_summary(self) -> None:
+        """A connection that never opened has no status line and no body; the summary already says so."""
+        client = hajer.wrap(FakeAnthropic(error=ProviderError("connection refused")), settings=RAW)
+        with pytest.raises(ProviderError):
+            client.messages.create(model="claude-fake-1", messages=[])
+        call = hajer.wrapped_calls()[0]
+        assert call.raw is None
+        assert call.to_wire()["errorType"] == "ProviderError"
+
+    def test_a_streamed_call_carries_no_capture(self) -> None:
+        stream = _chat_stream()
+        client = hajer.wrap(FakeOpenAI(chat_script=[stream]), settings=RAW)
+        returned = client.chat.completions.create(model="gpt-fake-1", messages=[], stream=True)
+        assert isinstance(returned, Iterable)
+        list(cast("Iterable[object]", returned))
+        call = hajer.wrapped_calls()[0]
+        assert call.raw is None
+        assert call.to_wire()["streamChunks"] == 3
+        assert call.to_wire()["streamComplete"] is True
+
+    async def test_a_framework_chat_model_captures_its_inner_call(self) -> None:
+        model = hajer.wrap(FakeChatAnthropic(script=[FakeAnthropicMessage(id="msg-inner-raw")]), settings=RAW)
+        await model.ainvoke([{"role": "user", "content": "hi"}])
+        wire = hajer.wrapped_calls()[0].to_wire()
+        assert wire["wire"] == "ANTHROPIC_MESSAGES"
+        body = wire["responseBody"]
+        assert isinstance(body, str)
+        assert json.loads(body)["id"] == "msg-inner-raw"
+
+    def test_raw_capture_does_not_change_the_idempotency_key(self) -> None:
+        """The digest covers the tuple and never the wrapped calls, so turning capture on is not a
+        different submission (`_payload.derive_idempotency_key`)."""
+        keys: list[str] = []
+        for settings in (QUIET, RAW):
+            hajer.clear_wrapped_calls()
+            client = hajer.wrap(FakeAnthropic(), settings=settings)
+            client.messages.create(model="claude-fake-1", messages=[])
+            keys.append(
+                _payload.derive_idempotency_key(
+                    team_id="team-1", verifier="v@1", request={"a": 1}, output="out", evidence=None
+                )
+            )
+        assert keys[0] == keys[1]
+
+
+class TestTheTaskBoundary:
+    """A call made in a child task reaches the operation that opened the scope. F-SDK-2, closed.
+
+    `wrap` records into a per-task `contextvars` context, and a child task gets a *copy* of it — so a
+    call recorded inside `asyncio.gather` never reached the `verify` in the parent. `langchain_core`
+    1.5.1's `BaseChatModel.agenerate` fans its calls out exactly that way, measured against a real
+    subject repository: four provider calls made, zero wrapped calls attached to the two submissions
+    that followed them.
+
+    `hajer.scope()` is the fix, and these tests are the two halves of why it is a scope rather than one
+    sink installed at `wrap()` time. **Inside** a scope the sink is a mutable object, so a copied
+    context still points at the same list and the parent sees what its children recorded. **Outside**
+    every scope nothing changed: a sink shared by every context descended from client construction
+    would attach one request's model calls to another request's `verify`, because a server wraps its
+    client once at start-up and every request task descends from that context. Under-capture is safe;
+    over-attachment is not.
+    """
+
+    async def test_a_call_in_a_child_task_is_not_seen_by_the_parent_outside_a_scope(self) -> None:
+        """The unchanged half: with no operation open, the task boundary is still the boundary."""
+        client = hajer.wrap(FakeAsyncAnthropic(), settings=QUIET)
+        seen_by_the_child: list[int] = []
+
+        async def child() -> None:
+            await client.messages.create(model="claude-fake-1", messages=[])
+            seen_by_the_child.append(len(hajer.wrapped_calls()))
+
+        # `gather` wraps the coroutine in a Task, and a Task copies the context it was created in.
+        await asyncio.gather(child())
+
+        assert seen_by_the_child == [1]
+        assert hajer.wrapped_calls() == ()
+
+    async def test_a_call_awaited_in_the_same_task_is_seen(self) -> None:
+        client = hajer.wrap(FakeAsyncAnthropic(), settings=QUIET)
+        await client.messages.create(model="claude-fake-1", messages=[])
+        assert len(hajer.wrapped_calls()) == 1
+
+    async def test_a_scope_sees_the_calls_its_child_tasks_made(self) -> None:
+        """The fix: `asyncio.gather`'s children append to the operation the parent is holding."""
+        client = hajer.wrap(FakeAsyncAnthropic(), settings=QUIET)
+
+        async def child(index: int) -> None:
+            await client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": str(index)}])
+
+        with hajer.scope() as operation:
+            await asyncio.gather(child(1), child(2), child(3))
+            assert len(hajer.wrapped_calls()) == 3
+            assert len(operation.calls) == 3
+            assert operation.dropped == 0
+
+    async def test_the_fan_out_a_framework_performs_reaches_the_submission(self) -> None:
+        """The measured shape: a chat model's own `gather`, and a `verify` that carries all four calls."""
+        model = hajer.wrap(FakeChatAnthropic(), settings=QUIET)
+
+        async def agenerate(prompts: int) -> None:
+            await asyncio.gather(*(model.ainvoke([{"role": "user", "content": str(n)}]) for n in range(prompts)))
+
+        with hajer.scope():
+            await agenerate(4)
+            attached = hajer.wrapped_calls()
+        assert len(attached) == 4
+        assert {call.provider for call in attached} == {"anthropic"}
+
+    async def test_a_scope_holds_calls_made_in_a_worker_thread(self) -> None:
+        """`asyncio.to_thread` copies the context too, so the sink is locked and not merely shared."""
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+
+        def call() -> None:
+            client.messages.create(model="claude-fake-1", messages=[])
+
+        with hajer.scope() as operation:
+            await asyncio.gather(*(asyncio.to_thread(call) for _ in range(8)))
+            assert len(operation.calls) == 8
+
+    def test_reading_the_operation_does_not_take_the_calls(self) -> None:
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+        with hajer.scope() as operation:
+            client.messages.create(model="claude-fake-1", messages=[])
+            assert len(operation.calls) == 1
+            assert len(operation.calls) == 1
+            assert len(hajer.wrapped_calls()) == 1
+
+    def test_the_operation_cap_counts_what_it_refused(self) -> None:
+        client = hajer.wrap(FakeAnthropic(), settings=hajer.HajerSettings(wrapped_calls_max=2))
+        with hajer.scope() as operation:
+            for _ in range(5):
+                client.messages.create(model="claude-fake-1", messages=[])
+            assert len(operation.calls) == 2
+            assert operation.dropped == 3
+            assert hajer.wrapped_calls_dropped() == 3
+
+    def test_a_closed_scope_leaves_the_task_context_alone(self) -> None:
+        """A call made after the block belongs to the task again, and the operation is closed."""
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+        with hajer.scope() as operation:
+            client.messages.create(model="claude-fake-1", messages=[])
+        client.messages.create(model="claude-fake-1", messages=[])
+        assert len(operation.calls) == 1
+        assert len(hajer.wrapped_calls()) == 1
+
+    def test_nested_scopes_take_their_own_calls(self) -> None:
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+        with hajer.scope() as outer:
+            client.messages.create(model="claude-fake-1", messages=[])
+            with hajer.scope() as inner:
+                client.messages.create(model="claude-fake-1", messages=[])
+                assert len(inner.calls) == 1
+            client.messages.create(model="claude-fake-1", messages=[])
+            assert len(outer.calls) == 2
+
+    def test_clearing_inside_a_scope_empties_the_operation(self) -> None:
+        """What `verify` does: it takes what the operation holds, and the block continues from empty."""
+        client = hajer.wrap(FakeAnthropic(), settings=QUIET)
+        with hajer.scope() as operation:
+            client.messages.create(model="claude-fake-1", messages=[])
+            hajer.clear_wrapped_calls()
+            assert operation.calls == ()
+            client.messages.create(model="claude-fake-1", messages=[])
+            assert len(operation.calls) == 1
