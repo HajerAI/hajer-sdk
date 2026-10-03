@@ -55,3 +55,5 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: ${{ github.event_name == 'push' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+          # A rehearsal may run again for a version TestPyPI already holds; a release never overwrites one.
+          skip-existing: ${{ github.event_name != 'push' }}

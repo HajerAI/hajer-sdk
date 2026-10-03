@@ -40,8 +40,9 @@ export HAJER_API_KEY=...
 export HAJER_TEAM_ID=...
 ```
 
-**Getting a key.** Keys and team ids come from your Hajer team settings. If you do not have access to a
-team yet, contact the Hajer team.
+**Getting a key.** In the Hajer app, Settings → API keys → Create key. The key is shown once, together
+with the team id and the base URL as a `.env` block you can copy as is; the team id stays beside the
+page's title afterwards. If you do not have access to a team yet, contact the Hajer team.
 
 **Inert without a key.** Without `HAJER_API_KEY` and `HAJER_TEAM_ID` — or with `HAJER_DISABLED=1` — the
 client is inert: `verify` returns `Assessment(status="unavailable", reason="DISABLED")` immediately with

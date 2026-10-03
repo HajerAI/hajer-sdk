@@ -146,6 +146,16 @@ def _attempts(check: dict[str, JsonValue]) -> str:
     return ", ".join(str(attempt) for attempt in cast(list[JsonValue], check["attempts"]))
 
 
+def _child_stderr(result: dict[str, JsonValue]) -> str:
+    """What a failed child last wrote, one line each, for the developer reading this failure: it names the exception a
+    bare `CHILD_FAILED` hides. Local only — the receipt that is uploaded carries no `executionEvidence`."""
+    evidence = result.get("executionEvidence")
+    attempts = [item for item in evidence if isinstance(item, dict)] if isinstance(evidence, list) else []
+    edited = [item for attempt in attempts for item in cast(list[JsonValue], attempt.get("edited") or [])]
+    tails = (item.get("stderrTail") for item in [*attempts, *edited] if isinstance(item, dict))
+    return "".join(f"\nchild stderr: {tail}" for tail in dict.fromkeys(tails) if isinstance(tail, str))
+
+
 class SuiteFile(pytest.File):
     def collect(self) -> Iterator["CaseItem"]:
         temporary = cast(str | None, self.config.getoption("hajer_temporary_local_executions"))
@@ -214,7 +224,8 @@ class CaseItem(pytest.Item):
                     f"{check['checkId']}: {check['verdict']} ({check['label']}, {check['reason']}; "
                     f"attempts {_attempts(check)})"
                     for check in checks
-                ),
+                )
+                + _child_stderr(result),
                 pytrace=False,
             )
         if decision == "NEUTRAL":

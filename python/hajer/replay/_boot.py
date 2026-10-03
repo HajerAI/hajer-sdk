@@ -6,17 +6,26 @@ before the guard. Without `site` nobody reads the venv's `pyvenv.cfg` either, so
 part of that it needs — the venv becomes `sys.prefix` — then puts only the venv's site-packages (without
 processing their `.pth` files) and the SDK on the path and hands over to `hajer.replay.__main__`, which
 installs the guard before anything of the revision is importable. Standard library only until then.
+
+Where the venv keeps its packages is asked of `site.getsitepackages`, the same computation `site.venv()`
+runs at an ordinary start, and never of `sysconfig`. A distribution that patches `sysconfig`'s install
+scheme answers a venv-relative `get_paths()` with its own layout — Debian and Ubuntu say
+`<venv>/local/lib/pythonX.Y/dist-packages`, Homebrew its own prefix — where no venv has ever put a package,
+and a child started that way could not import the SDK's own dependencies (`CHILD_FAILED`, nothing more said).
+Importing `site` under `-S` runs nothing: its `main()` is skipped while the flag is set.
+`_reach_boot.py` and `pytest_plugin/_boot.py` start the same way and repeat these lines rather than import
+them: `hajer` is not importable until they have run.
 """
 
+import site
 import sys
-import sysconfig
 from pathlib import Path
 
 
 def site_directories() -> tuple[str, ...]:
-    """The venv's site-packages, from `sys.prefix` as `_start` set it."""
-    paths = sysconfig.get_paths(vars={"base": sys.prefix, "platbase": sys.exec_prefix})
-    return tuple(dict.fromkeys((paths["purelib"], paths["platlib"])))
+    """The site-packages of `sys.prefix` as `_start` set it: the existing ones, in `site`'s own order."""
+    found = site.getsitepackages([sys.prefix, sys.exec_prefix])
+    return tuple(dict.fromkeys(path for path in found if Path(path).is_dir()))
 
 
 def _start() -> int:

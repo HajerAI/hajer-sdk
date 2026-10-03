@@ -212,6 +212,31 @@ def test_a_replay_is_decided_by_its_single_read_and_labelled_not_yet(
     assert result.returncode == (0 if verdict == "PASS" else 1)
 
 
+def test_a_child_that_fails_to_start_names_its_last_stderr_line_locally_and_never_in_the_upload(tmp_path: Path) -> None:
+    # `CHILD_FAILED` alone hides the traceback that names the cause. The last stderr line is kept in the local results and
+    # the failure text, and the upload strips it with the rest of `executionEvidence`: it is the application's own stderr.
+    build_fixture(tmp_path, expected="HIGH")
+    (tmp_path / "customer.py").write_text("raise SystemExit('the app refused to start: FIXTURE_BOOT_FAILURE')\n")
+    result = run_plugin(tmp_path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "APP_EXECUTION_UNAVAILABLE: CHILD_FAILED" in result.stdout
+    assert "child stderr: the app refused to start: FIXTURE_BOOT_FAILURE" in result.stdout
+    payload = json.loads((tmp_path / "results.json").read_text())
+    case = payload["suites"][0]["cases"][0]
+    assert case["checks"][0]["reason"] == "APP_EXECUTION_UNAVAILABLE: CHILD_FAILED"
+    assert case["executionEvidence"][0]["stderrTail"] == "the app refused to start: FIXTURE_BOOT_FAILURE"
+    received: list[bytes] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        received.append(request.content)
+        return httpx.Response(201)
+
+    settings = HajerSettings(api_key="fixture", team_id="team")
+    assert upload(payload, "project", settings, transport=httpx.MockTransport(handle))
+    assert b"FIXTURE_BOOT_FAILURE" not in received[0]
+    assert b"stderrTail" not in received[0]
+
+
 def test_unreachable_adapter_retains_its_case_and_unknown_check_in_receipt(tmp_path: Path) -> None:
     build_fixture(tmp_path)
     path = tmp_path / ".hajer" / "adapter-checks.json"

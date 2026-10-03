@@ -8,10 +8,4 @@ while the version is `0.x`, a minor release may change the public API.
 
 ## [0.1.0]
 
-First public release.
-
-### Known issues
-
-- Python 3.12 and 3.13: the CI suite plugin's replay child process fails to start (`CHILD_FAILED`), and
-  call-site capture inside asyncio tasks records `BaseEventLoop.create_task` instead of the application
-  frame. `verify`, `observe` and `wrap` are unaffected. Python 3.11 is fully supported.
+First public release. Python 3.11, 3.12 and 3.13.
