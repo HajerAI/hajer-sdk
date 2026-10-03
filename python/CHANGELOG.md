@@ -6,6 +6,6 @@ while the version is `0.x`, a minor release may change the public API.
 
 ## [Unreleased]
 
-## [0.1.0]
+## [0.1.0] - 2026-10-04
 
 First public release. Python 3.11, 3.12 and 3.13.
