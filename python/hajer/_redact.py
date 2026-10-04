@@ -54,7 +54,7 @@ from hajer._checksums import VALIDATORS, Validator
 from hajer._json import JsonObject, JsonValue
 from hajer._jsonpath import PathSyntaxError, matched, parse_paths
 from hajer._replay_marker import minted_marker_id
-from hajer._rules import CATALOG_ID, RULES, Rule
+from hajer._rules import RULES, Rule
 from hajer._settings import (
     REDACT_MAX_BYTES,
     REDACT_MAX_DEPTH,
@@ -298,8 +298,7 @@ def redact_document(
     """Rebuild this document with every recognised value replaced. Never raises; degrades and records.
 
     One return type, always the same pair (accepted DX row): a caller that had to check whether it got a
-    list or a tuple back would be a caller with two code paths over one result. `redact_submission` is the
-    one that also needs the degradation sentence, and it asks `_walk` for it directly.
+    list or a tuple back would be a caller with two code paths over one result.
     """
     redacted, state = _walk(document, policy)
     return redacted, tuple(state.entries)
@@ -427,42 +426,3 @@ def _exempt_paths(document: JsonValue, policy: ClientRedactionPolicy, state: _Pa
     except PathSyntaxError as unreadable:  # pragma: no cover - `build_policy` refuses these first
         state.degrade(f"an exempt path could not be read ({unreadable}); nothing was exempted")
         return frozenset()
-
-
-@dataclass(frozen=True, slots=True)
-class ClientRedactionReport:
-    """What one pass did, in the shape the wire carries: the catalog, the counts, and the degradation."""
-
-    catalog: str
-    counts_by_class: tuple[tuple[str, int], ...]
-    degraded: str | None
-
-    def to_wire(self) -> JsonObject:
-        """`clientRedaction` as `VerifyIn` takes it. Counts and a sentence; never a value or a path."""
-        body: JsonObject = {
-            "catalog": self.catalog,
-            "countsByClass": [{"category": name, "count": count} for name, count in self.counts_by_class],
-        }
-        if self.degraded is not None:
-            body["degraded"] = self.degraded
-        return body
-
-
-def redact_submission(
-    document: JsonValue, *, policy: ClientRedactionPolicy
-) -> tuple[JsonValue, ClientRedactionReport | None]:
-    """One submission body redacted, with the report the wire carries — or `None` when nothing happened.
-
-    `None` rather than an empty report when the pass found nothing and did not degrade: a report is a
-    claim about what was removed, and *nothing was removed* is better said by its absence than by a row of
-    zeroes the server would have to interpret.
-    """
-    redacted, state = _walk(document, policy)
-    counts: dict[str, int] = {}
-    for entry in state.entries:
-        counts[entry.category] = counts.get(entry.category, 0) + entry.count
-    if not counts and state.degraded is None:
-        return redacted, None
-    return redacted, ClientRedactionReport(
-        catalog=CATALOG_ID, counts_by_class=tuple(sorted(counts.items())), degraded=state.degraded
-    )

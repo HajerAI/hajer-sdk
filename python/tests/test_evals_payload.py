@@ -332,12 +332,14 @@ def test_the_wire_is_camel_case_json_and_round_trips_by_alias() -> None:
         "engine",
         "sdk",
         "git",
+        "suiteId",
         "config",
         "filters",
         "stats",
         "warnings",
         "results",
     }
+    assert wire["suiteId"] is None, "a bare -c names no suite"
     assert wire["git"] == {"sha": "0123abcd", "branch": "feat/evals", "dirty": False}
     assert wire["filters"] == {"workflowId": "refund-flow", "obligationIds": ["refund-window"]}
     first = cast(list[JsonObject], wire["results"])[0]

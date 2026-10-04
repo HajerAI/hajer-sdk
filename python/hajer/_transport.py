@@ -1,17 +1,15 @@
-"""The socket, and the four rules it obeys.
+"""The socket the SDK's own HTTP requests go through (the eval upload, `doctor`'s probe), and its four rules.
+
+Traces never pass here: they leave through the OpenTelemetry exporter (`hajer._telemetry_otel`).
 
 1. **The deadline covers the whole operation.** `Deadline` starts on a monotonic clock when the SDK
    call begins, so serialisation, connection, transfer and the server's own work all spend from the
-   same budget, and the per-request httpx timeout is whatever is left of it at the moment of the
-   send. The server is *also* told what is left, in the body, so it can refuse before reserving
-   rather than answer late.
-2. **No automatic inline retry.** `httpx.HTTPTransport(retries=0)` and nothing above it retries. A
-   late answer cannot retroactively justify an effect the application already performed, and a
-   silent second attempt inside a caller's deadline spends the caller's budget twice. `observe`
-   retries with bounded backoff because it is off the response path; `verify` never does.
-3. **The body is bounded before the socket.** `encode_body` refuses at `HAJER_BODY_MAX_BYTES` and the
-   caller turns that into `unavailable{BODY_OVER_BOUND}`. Refusing locally costs nothing, keeps the
-   payload out of the network, and gives the developer the same answer the server would have given.
+   same budget, and the per-request httpx timeout is whatever is left of it at the moment of the send.
+2. **No automatic inline retry.** `httpx.HTTPTransport(retries=0)` and nothing above it retries; the eval
+   upload retries with bounded backoff of its own because it is off every response path.
+3. **The body is bounded before the socket.** `encode_body` refuses at its limit. Refusing locally costs
+   nothing, keeps the payload out of the network, and gives the developer the same answer the server
+   would have given.
 4. **The transport is injectable.** Passing `transport=httpx.MockTransport(handler)` replaces the
    socket with a function. Every test in this package uses that seam; none opens a connection.
 """
@@ -20,7 +18,6 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping
 from typing import Final
 
 import httpx
@@ -125,39 +122,5 @@ class SyncTransport:
     def post(self, path: str, body: bytes, *, idempotency_key: str, timeout_s: float) -> httpx.Response:
         return self._client.post(path, content=body, headers={"Idempotency-Key": idempotency_key}, timeout=timeout_s)
 
-    def get(self, path: str, *, timeout_s: float, params: Mapping[str, str] | None = None) -> httpx.Response:
-        return self._client.get(path, timeout=timeout_s, params=dict(params) if params else None)
-
     def close(self) -> None:
         self._client.close()
-
-
-class AsyncTransport:
-    """The same four rules on an `httpx.AsyncClient`."""
-
-    __slots__ = ("_client",)
-
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        api_key: str,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
-        self._client = httpx.AsyncClient(
-            base_url=base_url,
-            headers=_headers(api_key),
-            transport=transport if transport is not None else httpx.AsyncHTTPTransport(retries=0),
-            timeout=httpx.Timeout(None),
-        )
-
-    async def post(self, path: str, body: bytes, *, idempotency_key: str, timeout_s: float) -> httpx.Response:
-        return await self._client.post(
-            path, content=body, headers={"Idempotency-Key": idempotency_key}, timeout=timeout_s
-        )
-
-    async def get(self, path: str, *, timeout_s: float, params: Mapping[str, str] | None = None) -> httpx.Response:
-        return await self._client.get(path, timeout=timeout_s, params=dict(params) if params else None)
-
-    async def close(self) -> None:
-        await self._client.aclose()

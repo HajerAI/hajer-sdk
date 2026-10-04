@@ -19,13 +19,9 @@ tokens under `usage_metadata`. Nothing about `google.genai` is imported anywhere
 from __future__ import annotations
 
 import inspect
-import json
-from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Final
 
 from hajer import _wrap
-from hajer._json import JsonValue
 from hajer._settings import HajerSettings
 from hajer._targets import Support, Target
 from hajer._wrap import instrument_coroutine, instrument_function, read_genai_answer
@@ -107,88 +103,3 @@ def _is_genai_client(candidate: object) -> bool:
 
 
 _wrap.add_instrumenter(instrument)
-
-
-#: The semconv `gen_ai.operation.name` values that are a model call.
-MODEL_OPERATIONS: Final[frozenset[str]] = frozenset({"chat", "text_completion", "embeddings", "generate_content"})
-
-
-def observation_from_gen_ai(
-    attributes: Mapping[str, object], *, start_ns: int, end_ns: int, capture_content: bool = False
-) -> _wrap.WrappedCall | None:
-    """The semconv 1.37+ mapping, shared as a contract with server ingest. No vendor dialects.
-
-    Attributes must identify a provider and a **model** operation (`MODEL_OPERATIONS`): a framework's
-    `invoke_agent`, `execute_task`, `execute_tool` or `create_agent` span is not a call (Traceloop
-    0.60 puts `gen_ai` attributes on every runnable, task, tool and graph span). Unknown counters
-    stay absent. JSON message attributes carry parts with tool_call/tool_call_response and their provider-issued
-    IDs.
-    """
-    provider = attributes.get("gen_ai.provider.name") or attributes.get("gen_ai.system")
-    operation = attributes.get("gen_ai.operation.name")
-    if not isinstance(provider, str) or not isinstance(operation, str) or operation not in MODEL_OPERATIONS:
-        return None
-    api = {
-        ("openai", "chat"): "chat.completions",
-        ("anthropic", "chat"): "messages",
-        ("openai", "responses"): "responses",
-    }.get((provider, operation), operation)
-    call = _wrap.WrappedCall(
-        provider=provider,
-        api=api,
-        started_at=datetime.fromtimestamp(start_ns / 1_000_000_000, UTC).isoformat(),
-        duration_ms=max(0, (end_ns - start_ns) // 1_000_000),
-    )
-    model = attributes.get("gen_ai.response.model") or attributes.get("gen_ai.request.model")
-    call.model = model if isinstance(model, str) else None
-    response_id = attributes.get("gen_ai.response.id")
-    call.response_id = response_id if isinstance(response_id, str) else None
-    error_type = attributes.get("error.type")
-    call.error_type = error_type if isinstance(error_type, str) else None
-    for key in ("input_tokens", "output_tokens"):
-        value = attributes.get(f"gen_ai.usage.{key}")
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            call.usage[key] = value
-    content: dict[str, JsonValue] = {}
-    tools: list[_wrap.ToolCall] = []
-    results: list[_wrap.ToolResult] = []
-    for direction in ("input", "output"):
-        messages = _span_messages(attributes.get(f"gen_ai.{direction}.messages"))
-        if capture_content:
-            content[f"{direction}Messages"] = messages
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            parts = message.get("parts")
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                identifier, name = part.get("id"), part.get("name")
-                tool_id = identifier if isinstance(identifier, str) else None
-                if part.get("type") == "tool_call":
-                    tools.append(
-                        _wrap.ToolCall(
-                            id=tool_id,
-                            name=name if isinstance(name, str) else None,
-                            arguments=part.get("arguments") if capture_content else None,
-                        )
-                    )
-                if part.get("type") == "tool_call_response":
-                    result = part.get("result") if "result" in part else part.get("response")
-                    results.append(_wrap.ToolResult(tool_use_id=tool_id, content=result if capture_content else None))
-    call.tool_calls, call.tool_results = tuple(tools), tuple(results)
-    call.content = content if capture_content else None
-    call.note("Observed from OpenTelemetry gen_ai spans; provider bytes and application outcomes are unverified.")
-    return call
-
-
-def _span_messages(value: object) -> list[JsonValue]:
-    if not isinstance(value, (str, list)):
-        return []
-    try:
-        parsed: JsonValue = json.loads(value if isinstance(value, str) else json.dumps(value, allow_nan=False))
-    except (ValueError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []

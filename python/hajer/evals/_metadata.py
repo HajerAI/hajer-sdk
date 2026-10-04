@@ -38,6 +38,7 @@ METADATA_KEY: Final = "metadata"
 W_NO_TEST_CASE_ID: Final = "W_NO_TEST_CASE_ID"
 E_HAJER_NOT_OBJECT: Final = "E_HAJER_NOT_OBJECT"
 E_HAJER_INVALID: Final = "E_HAJER_INVALID"
+E_OBLIGATION_UNDECLARED: Final = "E_OBLIGATION_UNDECLARED"
 
 Correlation: TypeAlias = Literal["platform", "none"]
 

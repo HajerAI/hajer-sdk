@@ -28,6 +28,7 @@ from hajer._errors import EvalMetadataError
 from hajer._json import JsonObject, JsonValue
 from hajer._settings import HajerSettings
 from hajer.evals._metadata import (
+    E_OBLIGATION_UNDECLARED,
     HAJER_METADATA_KEY,
     METADATA_KEY,
     Correlation,
@@ -169,7 +170,7 @@ def before_all(context: JsonObject, *, settings: HajerSettings | None = None) ->
             continue
         merged = merged_hajer_metadata(test, inherited)
         updated.append(test if merged is None else _with_hajer(test, merged))
-        classified.append(classify_test(test, index, inherited=inherited))
+        classified.append(_against_manifest(classify_test(test, index, inherited=inherited), settings))
     narrowing = _Filter(workflow_id=settings.eval_workflow, obligation_ids=settings.eval_obligation_ids)
     errors = tuple(line for item in classified for line in item.errors)
     if errors:
@@ -248,6 +249,36 @@ def _with_hajer(test: JsonObject, merged: JsonObject) -> JsonObject:
     rewritten: JsonObject = dict(metadata) if isinstance(metadata, dict) else {}
     rewritten[HAJER_METADATA_KEY] = merged
     return {**test, METADATA_KEY: rewritten}
+
+
+def _against_manifest(item: TestClassification, settings: HajerSettings) -> TestClassification:
+    """With a manifest in force, every obligation a test names must be one the manifest declares.
+
+    An undeclared id is an error, like a malformed key: the platform would store a run whose obligation nobody
+    declared, and the terminal is the place to learn that, before the first provider call. Without a manifest
+    (`HAJER_EVAL_MANIFEST` unset) there is nothing to check against and nothing is.
+    """
+    if settings.eval_manifest is None or item.hajer is None or not item.hajer.obligation_ids:
+        return item
+    declared = settings.eval_declared_obligation_ids
+    undeclared = [
+        f"[{E_OBLIGATION_UNDECLARED}] test {reference(item.index, item.label)}: metadata.{HAJER_METADATA_KEY}."
+        f"obligationIds.{position} {name!r} is not declared in {Path(settings.eval_manifest).name}"
+        + (f" (declared: {', '.join(declared)})" if declared else " (it declares none)")
+        for position, name in enumerate(item.hajer.obligation_ids)
+        if name not in declared
+    ]
+    if not undeclared:
+        return item
+    return TestClassification(
+        index=item.index,
+        label=item.label,
+        test_case_id=item.test_case_id,
+        correlation="none",
+        hajer=None,
+        warnings=item.warnings,
+        errors=(*item.errors, *undeclared),
+    )
 
 
 def _passthrough(index: int) -> TestClassification:

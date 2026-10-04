@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Sequence
 from typing import cast
 
 import pytest
@@ -14,42 +14,20 @@ import pytest
 import hajer
 from hajer import _telemetry
 from hajer._wrap import TRUNCATION_MARK
+from tests.conftest import Emitting
 from tests.fakes import FakeOpenAI
 
 pytest.importorskip("opentelemetry.sdk")
 
-from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanContext, StatusCode
-
-Emitting = Callable[[hajer.HajerSettings], InMemorySpanExporter]
 
 _SETTINGS = hajer.HajerSettings(environment="production")
 #: A W3C traceparent an eval engine would hand a provider: version, trace id, parent span id, sampled.
 _TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 _PARENT_ID = "b7ad6b7169203331"
 _TRACEPARENT = f"00-{_TRACE_ID}-{_PARENT_ID}-01"
-
-
-@pytest.fixture
-def emitting() -> Iterator[Emitting]:
-    """An isolated SDK provider with an in-memory exporter, configured as the emitter's; reset afterwards."""
-    providers: list[TracerProvider] = []
-
-    def configure(settings: hajer.HajerSettings) -> InMemorySpanExporter:
-        exporter = InMemorySpanExporter()
-        provider = TracerProvider()
-        provider.add_span_processor(SimpleSpanProcessor(exporter))
-        providers.append(provider)
-        _telemetry.configure(settings, tracer_provider=provider)
-        return exporter
-
-    yield configure
-    _telemetry.configure(None)
-    for provider in providers:
-        provider.shutdown()
 
 
 def _spans(exporter: InMemorySpanExporter) -> dict[str, ReadableSpan]:
@@ -354,38 +332,6 @@ def test_a_flush_that_raises_is_reported_false() -> None:
         assert _telemetry.flush() is False
     finally:
         _telemetry.configure(None)
-
-
-def test_the_provider_is_chosen_by_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit first; then the application's own SDK provider; then an isolated exporter, never made global; else no-op."""
-    from hajer import _telemetry_otel  # noqa: PLC0415 - the OTel half is imported lazily by design
-
-    own = TracerProvider()
-    exporter = InMemorySpanExporter()
-    own.add_span_processor(SimpleSpanProcessor(exporter))
-    try:
-        explicit = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1"), own)
-        assert explicit.provider is own, "an explicit provider beats the endpoint"
-
-        monkeypatch.setattr(trace, "get_tracer_provider", lambda: own)
-        inherited = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1"), None)
-        assert inherited.provider is own, "the application's SDK provider beats the endpoint"
-        inherited.start("workflow x", {"hajer.workflow.id": "x"}, traceparent=None).end(None)
-        assert [span.name for span in cast(Sequence[ReadableSpan], exporter.get_finished_spans())] == ["workflow x"]
-
-        monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
-        isolated = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1/"), None)
-        assert isinstance(isolated.provider, TracerProvider)
-        assert isolated.provider is not own
-        assert not isinstance(trace.get_tracer_provider(), TracerProvider), "never installed as the global provider"
-        isolated.provider.shutdown()
-
-        silent = _telemetry_otel.build(hajer.HajerSettings(), None)
-        assert silent.provider is None
-        assert silent.flush(10) is False
-        silent.start("workflow x", {}, traceparent=None).end(None)
-    finally:
-        own.shutdown()
 
 
 def test_the_public_names_are_the_module_ones() -> None:

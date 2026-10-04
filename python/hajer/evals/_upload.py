@@ -11,9 +11,9 @@
    payload and saying no, and a second copy of the same payload would get the same answer. The run id is
    the idempotency key on every attempt, so a retry after an answer that was lost in transit is a 409,
    which is the run already stored: `uploaded`.
-4. **It sends nothing it should not.** Inert settings send nothing (the pull request that installs the
-   SDK has no credentials); so does a settings object that names no project, because a run with no home
-   is a run the service would refuse anyway.
+4. **It sends nothing it should not.** Inert settings send nothing: the pull request that installs the
+   SDK has no credentials. The run names no project and no repository of its own — the platform places it
+   by the git context the payload carries (`git.ci.repository`, `git.remoteUrl`).
 """
 
 from __future__ import annotations
@@ -34,13 +34,12 @@ from hajer._transport import Deadline, SyncTransport, encode_body
 
 UploadStatus = Literal["uploaded", "skipped", "failed"]
 
-#: httpx wants seconds; the whole SDK speaks milliseconds. The same one-line conversion `_transport` and
-#: `_queue` each spell for themselves, because neither exports it.
+#: httpx wants seconds; the whole SDK speaks milliseconds. The same one-line conversion `_transport` spells
+#: for itself, because it does not export it.
 _MS_PER_S: Final[float] = 1_000.0
 
 #: What the receipt says, so the CLI and the tests compare against one spelling.
 SKIPPED_INERT: Final[str] = "INERT"
-SKIPPED_NO_PROJECT: Final[str] = "NO_PROJECT"
 FAILED_NO_RUN_ID: Final[str] = "NO_RUN_ID"
 FAILED_BODY_OVER_BOUND: Final[str] = "BODY_OVER_BOUND"
 FAILED_REFUSED: Final[str] = "REFUSED"
@@ -56,7 +55,7 @@ _RUN_ID_KEY: Final[str] = "runId"
 class UploadReceipt:
     """What became of one run's upload — the CLI's whole knowledge of it.
 
-    `reason` is `None` for an upload; `INERT` or `NO_PROJECT` for a skip; and for a failure
+    `reason` is `None` for an upload; `INERT` for a skip; and for a failure
     `BODY_OVER_BOUND` (refused locally, nothing sent), `REFUSED` (a 4xx: the service read it and said no),
     `UNREACHABLE` (no usable answer after every attempt: a socket error or a 5xx), `TIMEOUT` (the last
     attempt ran out of its deadline) or `NO_RUN_ID` (the payload carried no run id — a programming error
@@ -77,22 +76,18 @@ def upload_eval_run(
     payload: JsonObject,
     *,
     settings: HajerSettings,
-    project_id: str | None = None,
     transport: httpx.BaseTransport | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> UploadReceipt:
     """POST one run to `EVAL_RUNS_PATH`, degraded to fit and retried within bounds. Never raises.
 
-    `project_id` names the project this one call uploads to, over `HAJER_PROJECT_ID`; `transport` and
-    `sleep` are seams, so a test asserts on the wire and on the backoff without a socket or a clock.
+    `transport` and `sleep` are seams, so a test asserts on the wire and on the backoff without a socket or a
+    clock.
     """
     api_key = settings.api_key
     team_id = settings.team_id
     if settings.inert or not api_key or not team_id:
         return _skipped(SKIPPED_INERT)
-    target = project_id or settings.project_id
-    if not target:
-        return _skipped(SKIPPED_NO_PROJECT)
     run_id = payload.get(_RUN_ID_KEY)
     if not isinstance(run_id, str) or not run_id:
         return UploadReceipt(status="failed", http_status=None, reason=FAILED_NO_RUN_ID, attempts=0, degraded=())
@@ -105,7 +100,7 @@ def upload_eval_run(
     try:
         return _send(
             client,
-            EVAL_RUNS_PATH.format(team_id=team_id, project_id=target),
+            EVAL_RUNS_PATH.format(team_id=team_id),
             body,
             run_id=run_id,
             degraded=degraded,
@@ -228,10 +223,8 @@ def _is_refusal(status: int) -> bool:
 
 
 def _backoff_s(settings: HajerSettings, *, failures: int) -> float:
-    """Seconds before the next attempt: doubling from `observe_backoff_initial_ms`, capped at `observe_backoff_max_ms`.
-
-    The arithmetic `_queue.Bounds.failed` applies to a failed observe flush, spelled here rather than
-    imported: the queue module brings the whole observe machinery with it, and this is one request.
-    """
-    waited_ms = min(settings.observe_backoff_initial_ms * (2 ** (failures - 1)), settings.observe_backoff_max_ms)
+    """Seconds before the next attempt: doubling from `HAJER_EVAL_UPLOAD_BACKOFF_INITIAL_MS`, capped at its `_MAX_MS`."""
+    waited_ms = min(
+        settings.eval_upload_backoff_initial_ms * (2 ** (failures - 1)), settings.eval_upload_backoff_max_ms
+    )
     return waited_ms / _MS_PER_S

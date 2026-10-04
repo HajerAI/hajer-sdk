@@ -1,0 +1,15 @@
+# The repository's evals, declared once: the suites `hajer eval` runs with no `-c`, and the obligations a test
+# may name under `metadata.hajer.obligationIds`. The Hajer platform reads this same file through the repository's
+# GitHub connection, so the suites and obligations are on the platform before the first run is uploaded.
+version: 1
+
+suites:
+  - id: support
+    path: promptfooconfig.yaml
+    description: Customer support regression suite
+
+obligations:
+  - id: obl_refund_status_disclosed
+    title: A refund's status is disclosed as it is
+    workflow: wf_support
+    description: The agent reports a pending refund as pending and never claims it completed.

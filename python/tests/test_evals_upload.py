@@ -18,7 +18,7 @@ from hajer._json import JsonObject, JsonValue
 from hajer.evals._upload import UploadReceipt, upload_eval_run
 from tests.conftest import Recorder
 
-EXPECTED_PATH = "/api/teams/team-1/projects/proj-1/eval-runs"
+EXPECTED_PATH = "/api/teams/team-1/eval-runs"
 
 
 def configured(**overrides: object) -> HajerSettings:
@@ -26,11 +26,10 @@ def configured(**overrides: object) -> HajerSettings:
     fields: dict[str, object] = {
         "api_key": "k",
         "team_id": "team-1",
-        "project_id": "proj-1",
         "base_url": "https://hajer.test",
         "eval_upload_deadline_ms": 250,
-        "observe_backoff_initial_ms": 1,
-        "observe_backoff_max_ms": 4,
+        "eval_upload_backoff_initial_ms": 1,
+        "eval_upload_backoff_max_ms": 4,
     }
     fields.update(overrides)
     return HajerSettings.model_validate(fields)
@@ -73,12 +72,10 @@ def upload(
     settings: HajerSettings | None = None,
     payload: JsonObject | None = None,
     sleep: SleepSpy | None = None,
-    project_id: str | None = None,
 ) -> UploadReceipt:
     return upload_eval_run(
         payload if payload is not None else run_payload(),
         settings=settings if settings is not None else configured(),
-        project_id=project_id,
         transport=recorder.transport(),
         sleep=sleep if sleep is not None else SleepSpy(),
     )
@@ -123,13 +120,6 @@ class TestTheWire:
         assert receipt.http_status == 409
         assert receipt.reason is None
         assert receipt.attempts == 1
-
-    def test_an_explicit_project_overrides_the_settings(self) -> None:
-        recorder = status(201)
-
-        upload(recorder, project_id="proj-override")
-
-        assert recorder.requests[0].url.path == "/api/teams/team-1/projects/proj-override/eval-runs"
 
 
 class TestRetry:
@@ -220,13 +210,6 @@ class TestNothingSent:
             receipt = upload(Recorder(never_called), settings=inert)
 
             assert receipt == UploadReceipt(status="skipped", http_status=None, reason="INERT", attempts=0, degraded=())
-
-    def test_no_project_anywhere_sends_nothing(self) -> None:
-        receipt = upload(Recorder(never_called), settings=configured(project_id=None))
-
-        assert receipt == UploadReceipt(
-            status="skipped", http_status=None, reason="NO_PROJECT", attempts=0, degraded=()
-        )
 
     def test_a_payload_without_a_run_id_is_reported_not_raised(self) -> None:
         payload = run_payload()

@@ -11,9 +11,6 @@ import dataclasses
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from types import ModuleType, TracebackType
-from typing import Protocol
-
-from hajer._json import JsonValue
 
 
 @dataclass
@@ -636,64 +633,3 @@ class FakeChatAnthropic:
 
     async def ainvoke(self, messages: list[object], **kwargs: object) -> object:
         return await self._async_client.messages.create(model="claude-fake-1", messages=messages, **kwargs)
-
-
-# ── the observed-capture fixture's provider (`test_observed_capture.py`) ─────────────────────────
-#
-# The smallest object `wrap` recognises as an Anthropic client, answering with a tool-use block
-# shaped the way the fixture application's consumer reads it. Here rather than in the test because
-# every field of a fake response exists to be read by `getattr` at runtime, which is the reason this
-# module is excluded from the dead-code scan in the first place.
-
-
-class Planner(Protocol):
-    """What the fixture's workflow offers the test: one phase of one route plan."""
-
-    def plan(self, depot: str, mode: str, requested_stops: int) -> object: ...
-
-
-class FixtureBlock:
-    """One tool-use content block, as a provider's own response object has it."""
-
-    def __init__(self, name: str, payload: dict[str, JsonValue]) -> None:
-        self.type = "tool_use"
-        self.id = f"toolu_{name}"
-        self.name = name
-        self.input = payload
-
-
-class FixtureUsage:
-    def __init__(self) -> None:
-        self.input_tokens = 11
-        self.output_tokens = 7
-
-
-class FixtureAnswer:
-    """A provider answer with the shape the fixture's consumer reads."""
-
-    def __init__(self, name: str, payload: dict[str, JsonValue]) -> None:
-        self.id = "msg_fixture"
-        self.model = "fixture-model"
-        self.stop_reason = "tool_use"
-        self.content = [FixtureBlock(name, payload)]
-        self.usage = FixtureUsage()
-
-    def model_dump(self, *, mode: str = "python") -> dict[str, JsonValue]:
-        return {"id": self.id, "model": self.model, "stopReason": self.stop_reason, "mode": mode}
-
-
-class FixtureMessages:
-    def __init__(self, answer: FixtureAnswer) -> None:
-        self._answer = answer
-        self.seen: list[dict[str, object]] = []
-
-    def create(self, **kwargs: object) -> FixtureAnswer:
-        self.seen.append(dict(kwargs))
-        return self._answer
-
-
-class FixtureClient:
-    """The smallest object `wrap` recognises as an Anthropic client: `messages.create`."""
-
-    def __init__(self, answer: FixtureAnswer) -> None:
-        self.messages = FixtureMessages(answer)

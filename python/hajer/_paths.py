@@ -1,32 +1,23 @@
-"""The SDK API operation catalog used to generate and check its wire types.
+"""The routes the SDK calls on the platform, and the package version.
 
-All cataloged routes are team-scoped and authenticated with a team API key.
+Every route is team-scoped and authenticated with a team API key (`HAJER_API_KEY`, `Authorization: Bearer`).
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-VERSION: Final[str] = "0.1.0"
+VERSION: Final[str] = "0.2.0"
 
-VERIFY_PATH: Final[str] = "/api/teams/{team_id}/verify"
-OBSERVE_PATH: Final[str] = "/api/teams/{team_id}/observe"
-OBSERVATIONS_PATH: Final[str] = "/api/teams/{team_id}/observations"
-ASSESSMENT_PATH: Final[str] = "/api/teams/{team_id}/observations/{observation_id}/assessment"
+#: Where the span emitter exports to by default: the platform's OTLP/HTTP traces receiver for the team
+#: (`hajer._telemetry`). The whole route, OTLP's own `/v1/traces` included.
+OTEL_TRACES_PATH: Final[str] = "/api/teams/{team_id}/otel/v1/traces"
 
-#: The backend's liveness probe. **Not one of the SDK's calls** and deliberately outside
-#: `SDK_OPERATIONS`: it is read only by `python -m hajer doctor`, to answer "is anything listening at
-#: HAJER_BASE_URL" without a credential. The client never touches it.
+#: Where `hajer eval --upload` posts an eval run (`hajer.evals._upload`). The payload is the SDK's own versioned
+#: schema (`hajer.evals._payload`); the platform resolves the repository the run belongs to from the run's own git
+#: context, so the route names the team and nothing else.
+EVAL_RUNS_PATH: Final[str] = "/api/teams/{team_id}/eval-runs"
+
+#: The backend's liveness probe. Read only by `python -m hajer doctor`, to answer "is anything listening at
+#: HAJER_BASE_URL" without a credential.
 HEALTH_PATH: Final[str] = "/api/health"
-
-#: Where `hajer eval --upload` posts an eval run (`hajer.evals._upload`). **Not in `SDK_OPERATIONS`**: the
-#: vendored snapshot does not carry the operation yet, and the generator would look for one it lacks. The
-#: payload is the SDK's own versioned schema (`hajer.evals._payload`), not a generated wire type.
-EVAL_RUNS_PATH: Final[str] = "/api/teams/{team_id}/projects/{project_id}/eval-runs"
-
-SDK_OPERATIONS: Final[tuple[tuple[str, str], ...]] = (
-    ("post", VERIFY_PATH),
-    ("post", OBSERVE_PATH),
-    ("get", OBSERVATIONS_PATH),
-    ("get", ASSESSMENT_PATH),
-)

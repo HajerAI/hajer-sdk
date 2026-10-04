@@ -125,6 +125,8 @@ class TestTheGoldenRun:
         assert validated.stats.passed == 4
         assert validated.engine.version == pinned().version
         assert validated.engine.lockfile_digest == pinned().lockfile_digest
+        assert validated.suite_id == "support", "the example's hajer.yaml drove the run"
+        assert "hajer eval (suite support): passed" in stdout
 
     def test_every_row_is_classified_and_the_platform_rows_carry_a_trace(
         self, golden: tuple[int, str, str, JsonObject]
@@ -255,10 +257,9 @@ class TestUploadAndEgress:
             cache_dir=settings.cache_dir,
             api_key="k",
             team_id="team-1",
-            project_id="proj-1",
             base_url="https://hajer.test",
-            observe_backoff_initial_ms=1,
-            observe_backoff_max_ms=2,
+            eval_upload_backoff_initial_ms=1,
+            eval_upload_backoff_max_ms=2,
         )
         seen: list[httpx.Request] = []
 
@@ -270,7 +271,7 @@ class TestUploadAndEgress:
         assert code == 0
         assert payload is not None
         (request,) = seen
-        assert request.url.path == "/api/teams/team-1/projects/proj-1/eval-runs"
+        assert request.url.path == "/api/teams/team-1/eval-runs"
         assert request.headers["Idempotency-Key"] == payload["runId"]
         assert request.headers["Authorization"] == "Bearer k"
         assert json.loads(request.content)["runId"] == payload["runId"]

@@ -1,10 +1,9 @@
-"""Opt-in, reversible installation. Hajer always records a call through its own wrap or HTTP capture.
+"""Opt-in, reversible installation: `hajer.instrument()` patches the provider client classes, `uninstrument()` restores.
 
-Whatever other tool traces the same calls — an OpenTelemetry instrumentor, a vendor's drop-in client — Hajer's own
-patch records them, with their caller frames: yielding a call to another tool was tried for three review rounds
-and could not be made loss-free across emitters. `instrument(tracer_provider=…)` adds
-an OpenTelemetry receiver for the calls Hajer cannot wrap; a span of a call Hajer also recorded is matched to that
-record and dropped (`_claims`), and a call recorded from a span says it has no frames.
+Hajer always records a call through its own wrap or HTTP capture, with its caller frames. Whatever other tool
+traces the same calls — an OpenTelemetry instrumentor, a vendor's drop-in client — Hajer's own patch records them;
+whether a model span is *emitted* for a call another instrumentation already covers is the emitter's decision
+(`hajer._telemetry`, `HAJER_MODEL_SPANS`).
 """
 
 from __future__ import annotations
@@ -19,12 +18,8 @@ import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from types import MethodType, ModuleType
-from typing import cast
 
-import httpx
-
-from hajer import _claims, _wrap
-from hajer._client import Hajer
+from hajer import _wrap
 from hajer._settings import HajerSettings
 
 _CLIENTS = {
@@ -57,21 +52,11 @@ class _Patch:
 
 @dataclass
 class Instrumentation:
-    """The installation receipt says whether an OTel source is connected; absence is never verified."""
+    """The installation receipt: what was patched, so `uninstrument()` can put exactly that back."""
 
     mode: str
-    tracer_provider: object | None = None
-    connected: bool = False
-    detail: str = ""
-    #: `FRAMES` while every call is recorded here and carries its caller frames; `DEGRADED: …` once any call is
-    #: recorded from a span instead (`LINKAGE_DEGRADED`), whatever `connected` says.
-    linkage: str = "FRAMES"
     patches: list[_Patch] = field(default_factory=list, repr=False)
-    client: Hajer | None = field(default=None, repr=False)
-    receiver: object | None = field(default=None, repr=False)
     finder: _Finder | None = field(default=None, repr=False)
-    previous_hook: _wrap.SettledHook | None = field(default=None, repr=False)
-    hook: _wrap.SettledHook | None = field(default=None, repr=False)
 
     def remember(self, owner: object, name: str, original: object, replacement: object) -> None:
         # A bound original and a replacement closure both keep the resource alive. Neither may
@@ -147,17 +132,10 @@ class _Finder(importlib.abc.MetaPathFinder):
         return spec
 
 
-def instrument(
-    *,
-    settings: HajerSettings | None = None,
-    transport: httpx.BaseTransport | None = None,
-    tracer_provider: object | None = None,
-) -> Instrumentation:
+def instrument(*, settings: HajerSettings | None = None) -> Instrumentation:
     """Install once before client construction, and return the receipt (the standing one on a later call).
 
-    Provider clients are instrumented as they are built, whatever else is loaded or traces them. An explicit
-    `tracer_provider` adds the OpenTelemetry receiver for the model calls Hajer cannot wrap; the receipt says
-    linkage is degraded once one of them is recorded.
+    Provider clients are instrumented as they are built, whatever else is loaded or traces them.
     """
     with _LOCK:
         if _STATE.installation is not None:
@@ -165,18 +143,7 @@ def instrument(
         resolved = settings if settings is not None else HajerSettings.from_env()
         state = Instrumentation(mode="wrap")
         _STATE.installation = state
-        state.client = Hajer(settings=resolved, transport=transport)
-        state.previous_hook = _wrap.settled_hook()
-
-        def observe(call: _wrap.WrappedCall) -> None:
-            if state.client is not None:
-                state.client.observe_call(call)
-
-        state.hook = observe
-        _wrap.set_settled_hook(state.hook)
         _wrap.run_installers(resolved)
-        if tracer_provider is not None:
-            _connect_otel(state, resolved, tracer_provider)
         state.finder = _Finder(resolved, state)
         sys.meta_path.insert(0, state.finder)
         for name in _CLIENTS:
@@ -195,46 +162,15 @@ def _restore_patches(state: Instrumentation) -> None:
     state.patches.clear()
 
 
-def _connect_otel(state: Instrumentation, settings: HajerSettings, source: object) -> None:
-    """Receive the model spans on the provider named by `tracer_provider=`, beside Hajer's own capture."""
-
-    def degraded() -> None:
-        state.linkage = "DEGRADED: " + _wrap.LINKAGE_DEGRADED
-
-    try:
-        module = importlib.import_module("hajer._otel")
-        connect = cast(Callable[..., tuple[object, object, bool]], module.connect)
-        state.tracer_provider, state.receiver, state.connected = connect(settings, source, degraded)
-        state.detail = (
-            "Model calls Hajer does not wrap are observed from their gen_ai spans and carry no caller frames, so "
-            "they cannot link to a call site by frame; a span of a call Hajer recorded is matched to that record."
-        )
-        if not state.connected:
-            state.detail += " No readable SDK TracerProvider; pass tracer_provider=. Configured but unverified."
-    except Exception:  # noqa: BLE001 - an optional dependency cannot prevent application startup
-        state.connected = False
-        state.detail = "OTel receiver unavailable; install hajer[otel]. Configured but unverified."
-
-
 def uninstrument() -> None:
-    """Restore only our bindings; later vendor changes remain theirs. Existing OTel bridges become inert."""
+    """Restore only our bindings; later vendor changes remain theirs."""
     with _LOCK:
         state = _STATE.installation
         if state is None:
             return
         _STATE.installation = None
         _restore_patches(state)
-        _claims.forget()
         # `_http_capture` imports this module, so its reversal is reached at call time.
         from hajer._http_capture import uninstall_http_capture  # noqa: PLC0415
 
         uninstall_http_capture()
-        if _wrap.settled_hook() is state.hook:
-            _wrap.set_settled_hook(state.previous_hook)
-        shutdown = "shutdown"
-        if state.receiver is not None:
-            cast(Callable[[], None], getattr(state.receiver, shutdown))()
-        if state.tracer_provider is not None:
-            cast(Callable[[], None], getattr(state.tracer_provider, shutdown))()
-        if state.client is not None:
-            state.client.close()

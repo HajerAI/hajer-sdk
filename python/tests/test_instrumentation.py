@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Callable, Iterator
 from types import ModuleType
@@ -18,7 +17,6 @@ from tests.fakes import FakeOpenAI
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.trace import Tracer
-    from opentelemetry.util.types import AttributeValue
 
 
 def api(name: str) -> Callable[..., object]:
@@ -146,26 +144,6 @@ def _tracer(provider: TracerProvider, scope: str = _SCOPE) -> Tracer:
     return provider.get_tracer(scope)
 
 
-def _model_span(provider: TracerProvider, **attributes: object) -> None:
-    """A model span, begun and ended with nothing inside it."""
-    span = _tracer(provider).start_span("ChatOpenAI.chat", attributes=_chat(**attributes))
-    span.end()
-
-
-def _chat(**attributes: object) -> dict[str, AttributeValue]:
-    given: dict[str, object] = {
-        "gen_ai.provider.name": "openai",
-        "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": _MODEL,
-    }
-    given.update({key.replace("__", "."): value for key, value in attributes.items() if value is not None})
-    return cast("dict[str, AttributeValue]", {key: value for key, value in given.items() if value != ""})
-
-
-def _answer_messages(text: str) -> str:
-    return json.dumps([{"role": "assistant", "parts": [{"type": "text", "content": text}]}])
-
-
 @pytest.mark.usefixtures("installed")
 def test_an_active_instrumentor_never_stops_wrap(monkeypatch: pytest.MonkeyPatch, provider: TracerProvider) -> None:
     """Deferral is removed. Repeated attempts showed it cannot be made loss-free across
@@ -177,43 +155,7 @@ def test_an_active_instrumentor_never_stops_wrap(monkeypatch: pytest.MonkeyPatch
     model.root_client.chat.completions.create(model=_MODEL, messages=[])
     (call,) = hajer.wrapped_calls()
     assert call.caller_frames
-    assert cast(hajer.Instrumentation, api("instrument")()).linkage == "FRAMES"
-
-
-@pytest.mark.usefixtures("installed")
-def test_an_explicit_receiver_keeps_wrapping_and_says_when_linkage_degrades(
-    monkeypatch: pytest.MonkeyPatch, provider: TracerProvider
-) -> None:
-    """Hajer always captures through its own wrap; `tracer_provider=` adds the receiver for
-    calls it cannot wrap. The receipt says FRAMES until a call is recorded from a span."""
-    module = ModuleType("openai")
-
-    class Client(FakeOpenAI):
-        pass
-
-    module.__dict__["OpenAI"] = Client
-    monkeypatch.setitem(sys.modules, "openai", module)
-    receipt = cast(hajer.Instrumentation, api("instrument")(tracer_provider=provider))
-    assert (receipt.mode, receipt.connected, receipt.linkage) == ("wrap", True, "FRAMES")
-    Client().chat.completions.create(model=_MODEL, messages=[])
-    (wrapped,) = hajer.wrapped_calls()
-    assert wrapped.caller_frames, "built after instrument(): wrapped, with its frames"
-    _model_span(provider, gen_ai__response__id="bedrock-1", gen_ai__provider__name="aws.bedrock")
-    assert [call.response_id for call in hajer.wrapped_calls()] == ["chatcmpl-1", "bedrock-1"]
-    assert receipt.linkage.startswith("DEGRADED")
-
-
-@pytest.mark.usefixtures("installed")
-def test_the_receiver_takes_model_operations_only(provider: TracerProvider) -> None:
-    """Every Traceloop chain, tool, agent and graph span became a phantom model call."""
-    api("instrument")(tracer_provider=provider)
-    for attributes in _FRAMEWORK_SPANS.values():
-        with _tracer(provider).start_as_current_span("framework", attributes=attributes):
-            pass
-    operations = ("chat", "text_completion", "embeddings", "generate_content")
-    for number, operation in enumerate(operations):
-        _model_span(provider, gen_ai__operation__name=operation, gen_ai__response__id=f"model-{number}")
-    assert [call.response_id for call in hajer.wrapped_calls()] == [f"model-{n}" for n in range(len(operations))]
+    assert cast(hajer.Instrumentation, api("instrument")()).mode == "wrap"
 
 
 _ANSWER = {
@@ -246,16 +188,15 @@ def _post_chat() -> None:
 
 
 @pytest.mark.parametrize("inside", ["no span", *_FRAMEWORK_SPANS])
-@pytest.mark.parametrize("receiver", [False, True])
 @pytest.mark.usefixtures("installed", "transports")
 def test_a_direct_request_is_captured_inside_any_framework_span(
-    monkeypatch: pytest.MonkeyPatch, provider: TracerProvider, inside: str, *, receiver: bool
+    monkeypatch: pytest.MonkeyPatch, provider: TracerProvider, inside: str
 ) -> None:
     """With a traced LangChain model wrapped, a direct model request made inside a runnable,
     a sequence step, a tool or a LangGraph node — spans Traceloop makes current, with `gen_ai.operation.name` —
     was left to a span that never came. Now it is always captured, and the framework span is no call."""
     _emitting_to(provider, monkeypatch)
-    api("instrument")(settings=_HTTP, **({"tracer_provider": provider} if receiver else {}))
+    api("instrument")(settings=_HTTP)
     model = _ChatModel()
     hajer.wrap(model, settings=_HTTP)
     assert getattr(model.root_client.chat.completions.create, "__hajer_instrumented__", False), "never deferred"
@@ -266,97 +207,6 @@ def test_a_direct_request_is_captured_inside_any_framework_span(
             _post_chat()
     (call,) = hajer.wrapped_calls()
     assert (call.provider, call.response_id, bool(call.caller_frames)) == ("openai", "chatcmpl-direct", True)
-
-
-def _traced_call(provider: TracerProvider, client: FakeOpenAI, **attributes: object) -> None:
-    """A framework instrumentor's model span, as Traceloop makes it: begun before the provider request, never current,
-    ended after the answer."""
-    span = _tracer(provider).start_span("ChatOpenAI.chat", attributes=_chat())
-    client.chat.completions.create(model=_MODEL, messages=[])
-    for key, value in _chat(**attributes).items():
-        span.set_attribute(key, value)
-    span.end()
-
-
-@pytest.mark.parametrize(
-    "span",
-    [
-        {"gen_ai__response__id": "chatcmpl-1"},  # a call's span with its response id
-        {"gen_ai__output__messages": _answer_messages("ok")},  # a streamed call's span: no id, the same answer
-        {"gen_ai__usage__input_tokens": 11, "gen_ai__usage__output_tokens": 7},  # no id, the same usage
-    ],
-)
-@pytest.mark.usefixtures("installed")
-def test_a_wrapped_call_and_its_span_are_one_record(provider: TracerProvider, span: dict[str, object]) -> None:
-    api("instrument")(tracer_provider=provider)
-    _traced_call(provider, hajer.wrap(FakeOpenAI()), **span)
-    (call,) = hajer.wrapped_calls()
-    assert call.caller_frames, "the wrap's record wins"
-
-
-@pytest.mark.usefixtures("installed")
-def test_a_span_begun_inside_a_wrapped_call_is_that_call(provider: TracerProvider) -> None:
-    """A client-level instrumentor's span begins inside Hajer's (outer, instance-level) patch and ends before Hajer's
-    record settles, so no response id is known yet when it ends."""
-    api("instrument")(tracer_provider=provider)
-
-    def create(**_: object) -> object:
-        _model_span(provider, gen_ai__response__id="chatcmpl-1")
-        return FakeOpenAI().chat.completions.create()
-
-    client = FakeOpenAI()
-    client.chat.completions.create = create
-    hajer.wrap(client)
-    client.chat.completions.create(model=_MODEL, messages=[])
-    (call,) = hajer.wrapped_calls()
-    assert call.caller_frames
-
-
-@pytest.mark.parametrize(
-    ("span", "flagged"),
-    [
-        ({"gen_ai__usage__input_tokens": 50, "gen_ai__usage__output_tokens": 9}, False),  # another call's usage
-        ({"gen_ai__output__messages": _answer_messages("something else")}, False),  # another call's answer
-        ({}, True),  # nothing to tell them apart
-        ({"gen_ai__request__model": ""}, True),  # nor a model
-    ],
-)
-@pytest.mark.usefixtures("installed")
-def test_a_distinct_call_inside_a_span_is_never_dropped(
-    provider: TracerProvider, span: dict[str, object], *, flagged: bool
-) -> None:
-    """A call recorded inside the span of a call Hajer did not record — the loop body of a streamed
-    call — claimed that span, and the streamed call was lost without a word."""
-    api("instrument")(tracer_provider=provider)
-    tracer = _tracer(provider)
-    traced = tracer.start_span("ChatOpenAI.chat", attributes=_chat(**span))  # its own call is not Hajer's
-    hajer.wrap(FakeOpenAI()).chat.completions.create(model=_MODEL, messages=[])  # the loop body's call
-    traced.end()
-    direct, from_span = hajer.wrapped_calls()
-    assert direct.caller_frames
-    assert not from_span.caller_frames
-    assert any(note.startswith("SPAN_MAY_DUPLICATE") for note in from_span.limitations) is flagged
-
-
-@pytest.mark.usefixtures("installed")
-def test_instrument_then_wrap_records_a_traced_call_once(
-    monkeypatch: pytest.MonkeyPatch, provider: TracerProvider
-) -> None:
-    """The root client was instrumented at construction, and its span was received as well."""
-    _emitting_to(provider, monkeypatch)
-    module = ModuleType("openai")
-
-    class Client(FakeOpenAI):
-        pass
-
-    module.__dict__["OpenAI"] = Client
-    monkeypatch.setitem(sys.modules, "openai", module)
-    api("instrument")(tracer_provider=provider)
-    model = _ChatModel()
-    model.root_client = Client()
-    hajer.wrap(model)
-    _traced_call(provider, model.root_client, gen_ai__response__id="chatcmpl-1")
-    assert len(hajer.wrapped_calls()) == 1
 
 
 @pytest.mark.usefixtures("installed")

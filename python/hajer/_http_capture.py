@@ -12,9 +12,7 @@ other request is recorded only with `HAJER_CAPTURE_HTTP`, as an `http` call: the
 the path as a **template** — a segment that is an id, a token or anything the redaction catalog recognises is
 replaced by a placeholder, because webhooks and bots carry their credential in the path — and the status.
 Never a header, never the query string, never a body. Never a request a wrapped provider call is making
-(`ACTIVE_CALL`), and never the SDK's own (its `User-Agent`) — whatever other tracing tool is active, or whose span
-is current: a model request another tool also traces is recorded here, and its span is matched to this record
-(`_claims`).
+(`ACTIVE_CALL`), and never the SDK's own (its `User-Agent`).
 """
 
 from __future__ import annotations
@@ -31,8 +29,7 @@ from typing import Final, Literal, cast
 
 import httpx
 
-from hajer._claims import Claimant, claim
-from hajer._http_libraries import HTTPX, HttpLibrary, libraries, library_of, not_read_errors
+from hajer._http_libraries import HTTPX, HttpLibrary, libraries, library_of
 from hajer._json import JsonValue
 from hajer._redact import ClientRedactionPolicy, build_policy, redact_document
 from hajer._settings import HajerSettings
@@ -126,7 +123,6 @@ class _Capture:
     settled: bool = False
     truncated: bool = False
     call: WrappedCall | None = None
-    claimant: Claimant | None = None
 
     def chunk(self, value: bytes) -> None:
         if self.call is not None:
@@ -146,7 +142,7 @@ class _Capture:
             payload: JsonValue = json.loads(self.request.content)
             if not isinstance(payload, dict) or not isinstance(payload.get("model"), str):
                 return
-            recorded = record_http_exchange(
+            record_http_exchange(
                 path=self.request.url.path,
                 request=payload,
                 body=bytes(self.body),
@@ -158,8 +154,6 @@ class _Capture:
                 started_ns=self.started_ns,
                 error=error,
             )
-            if self.claimant is not None:
-                self.claimant.call = recorded
         except Exception:  # noqa: BLE001, S110 - capture failure cannot change HTTP behavior
             pass
 
@@ -241,22 +235,12 @@ def _tees(library: HttpLibrary) -> tuple[type[_SyncTee], type[_AsyncTee]]:
     )
 
 
-def _model_of(request: httpx.Request) -> object:
-    try:
-        payload: JsonValue = json.loads(request.content)
-    except (ValueError, *not_read_errors()):
-        return None
-    return payload.get("model") if isinstance(payload, dict) else None
-
-
 def _begin(request: httpx.Request, settings: HajerSettings) -> _Capture | None:
     try:
         kind = _kind(request, everything=settings.capture_http)
         if kind is None:
             return None
         capture = _Capture(request, settings, kind)
-        if kind == "model":
-            capture.claimant = claim(_model_of(request))
         if kind == "http":
             # Begun here, on the caller's own stack: its frames are the application's now, not those of
             # whoever reads the body later.

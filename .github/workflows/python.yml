@@ -1,8 +1,8 @@
-# Python SDK quality gate: `just ci` (lockfile, ruff, basedpyright strict, vulture, deptry, the contract
-# check and the full pytest suite) on every Python version the package supports.
+# Python SDK quality gate: `just ci` (lockfile, ruff, basedpyright strict, vulture, deptry and the full
+# pytest suite) on every Python version the package supports.
 #
 # No network: every test uses httpx.MockTransport and fake provider clients. `contract/` is in `paths`
-# because hajer/_wire.py is generated from contract/openapi.json.
+# because the redaction tests read the vectors vendored there.
 name: python
 
 on:
@@ -85,7 +85,7 @@ jobs:
       - run: |
           uv venv /tmp/smoke
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
-          /tmp/smoke/bin/python -c "import hajer; c = hajer.Hajer(); assert c.inert; print(hajer.__version__)"
+          /tmp/smoke/bin/python -c "import hajer; assert hajer.HajerSettings.from_env().inert; print(hajer.__version__)"
       # The engine pin ships as package data, and `hajer` is a console script whose help needs no Node.
       - run: |
           unzip -l dist/*.whl | grep -E "hajer/evals/engine/package(-lock)?\.json"

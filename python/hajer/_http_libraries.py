@@ -48,7 +48,6 @@ class HttpLibrary:
     response: type[httpx.Response]
     sync_byte_stream: type[httpx.SyncByteStream]
     async_byte_stream: type[httpx.AsyncByteStream]
-    request_not_read: type[httpx.RequestNotRead]
 
 
 HTTPX: Final = HttpLibrary(
@@ -61,7 +60,6 @@ HTTPX: Final = HttpLibrary(
     response=httpx.Response,
     sync_byte_stream=httpx.SyncByteStream,
     async_byte_stream=httpx.AsyncByteStream,
-    request_not_read=httpx.RequestNotRead,
 )
 
 
@@ -77,7 +75,6 @@ def _fork(module: ModuleType) -> HttpLibrary:
         response=cast(type[httpx.Response], module.Response),
         sync_byte_stream=cast(type[httpx.SyncByteStream], module.SyncByteStream),
         async_byte_stream=cast(type[httpx.AsyncByteStream], module.AsyncByteStream),
-        request_not_read=cast(type[httpx.RequestNotRead], module.RequestNotRead),
     )
 
 
@@ -106,8 +103,3 @@ def library_of(value: object) -> HttpLibrary:
     if isinstance(value, httpx.Request | httpx.Response):
         return HTTPX
     return next((item for item in libraries() if isinstance(value, (item.request, item.response))), HTTPX)
-
-
-def not_read_errors() -> tuple[type[httpx.RequestNotRead], ...]:
-    """Each library's `RequestNotRead`: what reading a streamed request's body raises before it was read."""
-    return tuple(item.request_not_read for item in libraries())

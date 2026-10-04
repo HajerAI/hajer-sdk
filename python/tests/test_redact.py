@@ -12,20 +12,17 @@ from typing import cast
 
 import pytest
 
-import hajer
-from hajer import _payload
 from hajer._json import JsonObject, JsonValue
 from hajer._jsonpath import PathSyntaxError
 from hajer._redact import (
     ClientRedactionPolicy,
     RedactionEntry,
+    _walk,  # pyright: ignore[reportPrivateUsage] - the pass's own report, for its degradations
     build_policy,
     redact_document,
-    redact_submission,
 )
 from hajer._rules import CATALOG_ID, PLACEHOLDERS, RULES
 from hajer._settings import REDACT_MAX_DEPTH, REDACT_MAX_NODES, REDACT_MAX_STRING_CHARS, HajerSettings
-from tests.conftest import Recorder, assessment_json, responds
 
 #: The ambiguous nesting the platform's rule generator refuses at generation time, written again here so
 #: this suite asserts the property of the **shipped** rule set without importing the generator. The generator's
@@ -48,35 +45,15 @@ def categories(entries: tuple[RedactionEntry, ...]) -> set[str]:
     return {entry.category for entry in entries}
 
 
-def test_client_redaction_is_on_by_default(settings: HajerSettings) -> None:
-    """A card number typed into a request never leaves the process, with nothing configured.
-
-    `HAJER_REDACT_CLIENT` defaults to on. The second half of the test is the
-    other half of that decision — `HAJER_REDACT_CLIENT=0` sends the value and attaches **no** report,
-    because an absent `clientRedaction` says *this client did not redact* and a report of zeroes would say
-    *it ran and found nothing*.
-    """
+def test_client_redaction_is_on_by_default() -> None:
+    """A card number in a message never leaves the process, with nothing configured: the default is on."""
     assert HajerSettings().redact_client is True
-    recorder = Recorder(responds(assessment_json()))
-    with hajer.Hajer(settings=settings, transport=recorder.transport()) as client:
-        client.verify("refund-policy@1", {"note": f"pay {CARD} to {IBAN}"}, "ok")
-    body = recorder.bodies()[0]
-    sent = json.dumps(body)
+    assert HajerSettings.from_env({}).redact_client is True
+    redacted, entries = redact_document({"note": f"pay {CARD} to {IBAN}"}, policy=build_policy())
+    sent = json.dumps(redacted)
     assert "4111" not in sent
     assert "GB82" not in sent
-    report = cast("JsonObject", body["clientRedaction"])
-    assert report["catalog"] == "redaction-rules@6"
-    assert {str(cast("JsonObject", row)["category"]) for row in cast("list[JsonValue]", report["countsByClass"])} == {
-        "CARD",
-        "IBAN",
-    }
-
-    off = settings.model_copy(update={"redact_client": False})
-    plain = Recorder(responds(assessment_json()))
-    with hajer.Hajer(settings=off, transport=plain.transport()) as client:
-        client.verify("refund-policy@1", {"note": f"pay {CARD}"}, "ok")
-    assert "4111" in json.dumps(plain.bodies()[0])
-    assert "clientRedaction" not in plain.bodies()[0]
+    assert categories(entries) == {"CARD", "IBAN"}
 
 
 def test_entries_are_always_a_tuple() -> None:
@@ -123,13 +100,12 @@ def test_unknown_validator_degrades_and_never_raises() -> None:
     )
     policy = ClientRedactionPolicy(_compiled=(unknown,))
 
-    redacted, report = redact_submission({"note": "FUTURE-12 and nothing else"}, policy=policy)
+    redacted, state = _walk({"note": "FUTURE-12 and nothing else"}, policy)
 
     assert cast("JsonObject", redacted)["note"] == "FUTURE-12 and nothing else"
-    assert report is not None
-    assert report.degraded is not None
-    assert "SHA3_CHECKSUM_V9" in report.degraded
-    assert "future-rule" in report.degraded
+    assert state.degraded is not None
+    assert "SHA3_CHECKSUM_V9" in state.degraded
+    assert "future-rule" in state.degraded
 
 
 def test_extra_rules_and_exempt_paths() -> None:
@@ -167,23 +143,20 @@ def test_budgets_degrade_instead_of_raising() -> None:
     policy = build_policy()
 
     long_value = "x" * (REDACT_MAX_STRING_CHARS + 1)
-    redacted, report = redact_submission({"note": long_value}, policy=policy)
+    redacted, state = _walk({"note": long_value}, policy)
     assert cast("JsonObject", redacted)["note"] == "[redacted:UNSCANNED]"
-    assert report is not None
-    assert report.degraded is not None
-    assert "REDACT_MAX_STRING_CHARS" in report.degraded
+    assert state.degraded is not None
+    assert "REDACT_MAX_STRING_CHARS" in state.degraded
 
     wide: JsonObject = {f"k{index}": "x" for index in range(REDACT_MAX_NODES + 2)}
-    _, wide_report = redact_submission(wide, policy=policy)
-    assert wide_report is not None
-    assert wide_report.degraded is not None
-    assert "REDACT_MAX_NODES" in wide_report.degraded
+    _, wide_state = _walk(wide, policy)
+    assert wide_state.degraded is not None
+    assert "REDACT_MAX_NODES" in wide_state.degraded
 
     huge: JsonObject = {f"k{index}": "y" * 4096 for index in range(300)}
-    _, huge_report = redact_submission(huge, policy=policy)
-    assert huge_report is not None
-    assert huge_report.degraded is not None
-    assert "REDACT_MAX_BYTES" in huge_report.degraded
+    _, huge_state = _walk(huge, policy)
+    assert huge_state.degraded is not None
+    assert "REDACT_MAX_BYTES" in huge_state.degraded
 
 
 def test_deep_json_does_not_recurse() -> None:
@@ -196,11 +169,10 @@ def test_deep_json_does_not_recurse() -> None:
     for _ in range(3_000):
         document = {"next": document}
 
-    redacted, report = redact_submission(document, policy=build_policy())
+    redacted, state = _walk(document, build_policy())
 
-    assert report is not None
-    assert report.degraded is not None
-    assert "REDACT_MAX_DEPTH" in report.degraded
+    assert state.degraded is not None
+    assert "REDACT_MAX_DEPTH" in state.degraded
     # Everything above the depth bound was still rebuilt; nothing raised.
     assert isinstance(redacted, dict)
     assert REDACT_MAX_DEPTH < 3_000
@@ -243,50 +215,6 @@ def test_idempotent_and_placeholders_match_nothing() -> None:
     for placeholder in PLACEHOLDERS:
         for rule in RULES:
             assert rule.pattern.search(placeholder) is None, f"{rule.rule_id} matches {placeholder}"
-
-
-def test_raw_capture_is_redacted_before_queue(settings: HajerSettings) -> None:
-    """A provider's own request bytes go through the same pass, before anything is queued or sent.
-
-    Asserted on the bytes the transport was handed, not on a `repr`: a raw capture is where a card number
-    pasted into a support ticket actually ends up, and redacting the tuple while leaving the capture whole
-    would be the protection with a hole in the middle of it.
-    """
-    body = _payload.observation_body(
-        mode="OBSERVE",
-        verifier=None,
-        request={"note": "see the call"},
-        output="ok",
-        evidence=None,
-        wrapped=(),
-        wrapped_dropped=0,
-        content_captured=True,
-        idempotency_key="k1",
-        deadline_ms=None,
-    )
-    body["wrappedCalls"] = [
-        {
-            "wire": "ANTHROPIC_MESSAGES",
-            "request": {"messages": [{"role": "user", "content": f"my card is {CARD}"}]},
-            "responseBody": json.dumps({"content": [{"type": "text", "text": f"thanks, {EMAIL}"}]}),
-            "responseStatus": 200,
-            "startedAt": "2026-09-19T12:00:00Z",
-            "durationMs": 41,
-        }
-    ]
-
-    redacted = _payload.redacted_body(body, policy=build_policy())
-
-    sent = json.dumps(redacted)
-    assert "4111" not in sent
-    assert EMAIL not in sent
-    assert "[redacted:CARD]" in sent
-    report = cast("JsonObject", redacted["clientRedaction"])
-    assert {str(cast("JsonObject", row)["category"]) for row in cast("list[JsonValue]", report["countsByClass"])} >= {
-        "CARD",
-        "EMAIL",
-    }
-    del settings
 
 
 def test_the_structural_classes_reach_the_client() -> None:

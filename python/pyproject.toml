@@ -1,13 +1,13 @@
 [project]
 name = "hajer"
-version = "0.1.0"
-description = "The Hajer SDK: hand a verifier the request, the output and the evidence, get an assessment back."
+version = "0.2.0"
+description = "The Hajer SDK: your application's model calls as traces, and `hajer eval` for the tests that cover them."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Hajer" }]
-keywords = ["llm", "ai", "verification", "guardrails", "evaluation", "observability", "openai", "anthropic"]
+keywords = ["llm", "ai", "observability", "tracing", "opentelemetry", "evaluation", "promptfoo", "openai", "anthropic"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -60,8 +60,9 @@ anthropic = ["anthropic>=0.75.0"]
 # the OpenTelemetry SDK, and the emitter exports over OTLP/HTTP when the process has no provider of its own.
 otel = ["opentelemetry-sdk>=1.37.0", "opentelemetry-exporter-otlp-proto-http>=1.37.0"]
 # `hajer eval`: the eval runner. Its engine is upstream promptfoo, installed from npm at the exact version
-# pinned in `hajer/evals/engine/package.json` (Node >= 22.22 on PATH); the Python side needs only `[otel]`.
-evals = ["hajer[otel]"]
+# pinned in `hajer/evals/engine/package.json` (Node >= 22.22 on PATH); the Python side needs `[otel]` and a YAML
+# reader for the repository's `hajer.yaml`.
+evals = ["hajer[otel]", "pyyaml>=6.0"]
 
 # `hajer` on the command line is `python -m hajer`: a console script cannot be conditional on an extra, so
 # `hajer eval` checks for Node and the engine itself and says what to install.
@@ -91,6 +92,7 @@ dev = [
     "vulture>=2.16",
     "httpx2>=2.13.0",
     "langchain-openai>=0.3",
+    "types-pyyaml>=6.0",
 ]
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────
@@ -98,10 +100,9 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-# Three generated modules: a formatter that rewrote one would put it permanently at odds with its
-# generator (`just contract-check` compares bytes, and `_rules.py`/`_checksums.py` also carry a digest of
-# their sources). basedpyright still checks all three.
-extend-exclude = [".venv", "hajer/_wire.py", "hajer/_rules.py", "hajer/_checksums.py"]
+# Two generated modules: a formatter that rewrote one would put it permanently at odds with its
+# generator (`_rules.py` / `_checksums.py` carry a digest of their sources). basedpyright still checks both.
+extend-exclude = [".venv", "hajer/_rules.py", "hajer/_checksums.py"]
 
 [tool.ruff.lint]
 select = [
@@ -144,8 +145,6 @@ known-first-party = ["hajer", "tests"]
 [tool.ruff.lint.per-file-ignores]
 # The one place the process environment is read.
 "hajer/_settings.py" = ["TID251"]
-# The wire generator is a script: it reports its progress on stderr and is run by hand and by CI.
-"scripts/generate_wire.py" = ["T20"]
 # Test code asserts, uses literal credentials, and builds fake provider clients whose method
 # signatures are the provider's, not ours.
 "tests/**" = ["S101", "S105", "S106", "ARG001", "ARG002"]
@@ -202,14 +201,11 @@ DEP002 = ["anthropic", "openai", "hajer"]
 # A library's public names have no caller inside the library, so the tests are part of the scan:
 # a public name nothing in hajer/ and nothing in tests/ uses is dead, and vulture says so.
 paths = ["hajer", "tests", "scripts"]
-# Two declaration modules, excluded because every field of a
-# pydantic model is read by validation and serialization, which vulture cannot see, so the whole
-# module would otherwise have to be whitelisted field by field. `_wire.py` is generated.
-# `tests/fakes.py` joins them: every field on a fake provider response exists to be read by
-# `getattr` at runtime, which is exactly what vulture cannot see. `_rules.py` and `_checksums.py` are
-# generated too, and their `SOURCE_DIGEST` is read by the generator's `--check` out of the *text* of the
-# file rather than by importing it — a read no scan of Python names can see.
-exclude = ["*/_models.py", "*/_wire.py", "*/_rules.py", "*/_checksums.py", "*/tests/fakes.py"]
+# `tests/fakes.py`: every field on a fake provider response exists to be read by `getattr` at runtime,
+# which is exactly what vulture cannot see. `_rules.py` and `_checksums.py` are generated, and their
+# `SOURCE_DIGEST` is read by their generator's drift check out of the *text* of the file rather than by
+# importing it — a read no scan of Python names can see.
+exclude = ["*/_rules.py", "*/_checksums.py", "*/tests/fakes.py"]
 min_confidence = 60
 sort_by_size = true
 ignore_decorators = ["@field_validator", "@model_validator", "@pytest.fixture"]
@@ -218,11 +214,8 @@ ignore_names = [
     "WRAP_CONSTRUCTORS",
     # pydantic / stdlib protocol names
     "model_config",
-    # `socketserver.ThreadingMixIn` reads this class attribute and `wsgiref`'s handler calls this method;
-    # both are stdlib protocol names that no line of ours mentions, which is exactly what vulture cannot see.
-    # They are load-bearing: `daemon_threads` is why Ctrl-C stops the proxy, and the overridden `log_message`
-    # is why a customer's provider paths and query strings do not end up in an access log.
-    "daemon_threads",
+    # `http.server` calls this method by name on the golden test's recording proxy; the override is why the
+    # engine's egress never lands in a test log.
     "log_message",
     # `pytest` calls these by name out of `conftest.py` and reads `pytestmark` off a test module, and Python calls
     # `__getitem__` through the subscript syntax. All are protocol names no line of ours mentions, which is
@@ -240,9 +233,11 @@ ignore_names = [
     # `isinstance` reads `__class__` and the subscript syntax calls `__getitem__`; neither is a name
     # any line of ours writes, which is what a protocol name is.
     "__class__",
-    # OpenTelemetry's `SpanProcessor` protocol: the `TracerProvider` calls these on every span and flush.
+    # OpenTelemetry's `SpanProcessor` and `SpanExporter` protocols: the `TracerProvider` and the batch
+    # processor call these on every span, flush and batch.
     "on_start",
     "force_flush",
+    "export",
     # `_redact._RulesSpec.version` is a contract field: pydantic validates it is the literal `1` and nothing
     # reads it afterwards, which is the whole point of a version pin and exactly what vulture cannot see.
     "version",

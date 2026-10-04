@@ -1,9 +1,10 @@
-"""`hajer.wrap(client)` — what the model call actually was, recorded beside the answer.
+"""`hajer.wrap(client)` — what the model call actually was, recorded as it happens.
 
-One line at client construction, and the next `verify` or `observe` **in the same task** carries the
-model calls that produced the output it is asking about. That is the whole of it. `wrap` returns the
-object it was handed, instrumented in place, so nothing downstream changes: the same client, the same
-methods, the same return values, the same exceptions, re-raised unchanged.
+One line at client construction, and every model call the client makes is recorded (`WrappedCall`) and
+handed, once it settles, to the span emitter (`hajer._telemetry`): the record is what becomes the
+`gen_ai` span the platform shows as a generation. `wrap` returns the object it was handed, instrumented
+in place, so nothing downstream changes: the same client, the same methods, the same return values, the
+same exceptions, re-raised unchanged.
 
 **What it records** (`WrappedCall`): provider and api, the model, the request settings the caller
 passed, the declared tool names, the tool calls the model asked for and the tool results the caller
@@ -12,17 +13,9 @@ message when the call raised, retries performed at this seam, whether the call s
 that stream ran to exhaustion.
 
 **Content is captured by default**: message text, tool-call arguments and tool-result bodies.
-`HAJER_CAPTURE_CONTENT=0` opts out. Client-side Layer 1 redaction runs before hosted export.
-
-**What it records only with `HAJER_CAPTURE_RAW=1` as well** (`RawCapture`): the provider's own request
-and response documents, so the service reads the call itself into a `ModelCallReceipt` instead of
-taking the summary's word for it. A summary is a description and is counted as one; a capture is the
-bytes and becomes a receipt. Raw is strictly more disclosing than content, so it requires content
-capture and is refused without it. One capture is bounded by `HAJER_WRAPPED_CALL_MAX_BYTES`: past it the
+`HAJER_CAPTURE_CONTENT=0` opts out. Content is bounded by `HAJER_WRAPPED_CALL_MAX_BYTES`: past it the
 longest texts are clipped in the middle, keeping their head and tail around their full length and SHA-256
-(`TRUNCATION_MARK`) — a prompt is never dropped whole; a clipped response also sets `truncated`. A streamed
-call never carries a
-capture — the SSE framing is gone below this seam, so there are no bytes here to capture.
+(`TRUNCATION_MARK`) — a prompt is never dropped whole. Client-side redaction runs before anything is exported.
 
 **What it can never record**, at any setting: what happened to the output after the call (a later
 transformation, a template, a redaction), database truth, authorization state, whether the side
@@ -33,7 +26,9 @@ objects, the container is not. A stream that is neither consumed nor closed is r
 `stream_complete=False` and never becomes complete.
 
 No provider library is imported here, at module import time or ever: `wrap` finds the surfaces by
-attribute and replaces the leaf `create` on the object it was given.
+attribute and replaces the leaf `create` on the object it was given. And this module imports nothing of
+the SDK above `_settings`: the emitter reaches it through one installed observer (`set_call_observer`),
+never through an import, so the seam that runs inside every provider call stays free of everything else.
 """
 
 from __future__ import annotations
@@ -54,24 +49,21 @@ from collections.abc import Awaitable, Callable, Generator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, Literal, TypeAlias, TypeVar, cast
+from typing import Final, Protocol, TypeAlias, TypeVar, cast
 from unittest.mock import NonCallableMock
 from urllib.parse import urlsplit
 
-from hajer._claims import OPEN_CALL, claim, remember
 from hajer._errors import UnsupportedClientError
 from hajer._frame_context import frames_for_call, install_task_frames
 from hajer._frames import CALLER_FRAMES_UNRESOLVED, FILE_DIGESTS_CACHED, CallerFrame, file_digest
 from hajer._json import JsonObject, JsonValue
 from hajer._raw_response import http_response, observe_body
-from hajer._reads import ReadSink, recording
 from hajer._settings import HajerSettings
 from hajer._stream import ACTIVE_CALL, AsyncRecordingStream, DualRecordingStream, RecordingStream, StreamRecorder
 
-#: Who answered. The provider's own name, lower case, as a receipt spells it — `openai`, `anthropic`,
-#: `google`, and for a router the upstream it chose (`litellm` names it in the model: `anthropic/claude-…`).
-#: A string rather than a closed vocabulary because a router's upstream list is not ours to enumerate, and
-#: the wire types it as a string for the same reason (`WrappedCallSummaryIn.provider`).
+#: Who answered. The provider's own name, lower case — `openai`, `anthropic`, `google`, and for a router
+#: the upstream it chose (`litellm` names it in the model: `anthropic/claude-…`). A string rather than a
+#: closed vocabulary because a router's upstream list is not ours to enumerate.
 Provider: TypeAlias = str
 #: Which door was knocked on. `chat.completions` and `/v1/responses` are two contracts from one company,
 #: so the api is recorded beside the provider and never folded into it.
@@ -79,10 +71,6 @@ Api: TypeAlias = str
 #: A provider method as this module has to treat it: something callable whose signature is the provider's
 #: business, not ours. Every replacement forwards `*args, **kwargs` untouched.
 _Callable: TypeAlias = Callable[..., object]
-#: The provider wire a raw capture was made on, spelled the way the service's own ingest spells it
-#: (its `Wire` vocabulary). Three, because these are the three
-#: request shapes `wrap` recognises.
-Wire: TypeAlias = Literal["OPENAI_CHAT_COMPLETIONS", "OPENAI_RESPONSES", "ANTHROPIC_MESSAGES"]
 
 _MARK: Final[str] = "__hajer_instrumented__"
 #: Where a framework chat model keeps the provider client it was built with, in the order they are
@@ -98,10 +86,6 @@ _NS_PER_MS: Final[int] = 1_000_000
 _FLOAT32_BYTES: Final[int] = 4
 #: How deep `_jsonable` walks a value the provider handed us before it names the type instead.
 _JSON_MAX_DEPTH: Final[int] = 4
-#: How deep a **raw** capture walks. A provider's request and response documents are a handful of levels
-#: deep; this is a loop guard rather than a shaping decision, so it is far above what either shape
-#: reaches and far below anything that would exhaust the stack.
-_RAW_MAX_DEPTH: Final[int] = 24
 
 #: Request keys worth recording as settings. Everything else the caller passes is left alone: a key
 #: not on this list is not evidence about the call, it is the caller's business.
@@ -132,16 +116,6 @@ _SETTING_KEYS: Final[tuple[str, ...]] = (
     "encoding_format",
 )
 
-#: Which wire one (provider, api) pair is, for a raw capture. The same three pairs `_surfaces` finds.
-_WIRES: Final[dict[tuple[str, str], Wire]] = {
-    ("openai", "chat.completions"): "OPENAI_CHAT_COMPLETIONS",
-    ("openai", "responses"): "OPENAI_RESPONSES",
-    ("anthropic", "messages"): "ANTHROPIC_MESSAGES",
-}
-#: The status a raw capture records for a call the provider answered. The SDK sits above the transport:
-#: a parsed response object is the provider having answered 2xx, and that is the only thing it can
-#: honestly say about the status line it never saw.
-_ANSWERED_STATUS: Final[int] = 200
 #: Where the status of a failed call is read from, if the provider's exception carries one.
 _STATUS_ATTRIBUTES: Final[tuple[str, ...]] = ("status_code", "status")
 _STATUS_MIN: Final[int] = 100
@@ -172,8 +146,6 @@ STREAM_USAGE_UNOBSERVED: Final[str] = (
     'stream_options={"include_usage": True}; without that, the usage of a streamed call is not '
     "observable at this seam."
 )
-#: What the record says when raw capture was asked for and this library is not one of the three provider
-#: wires the service can read back into a receipt.
 #: What stands in the middle of a text clipped to fit its bound: how much is missing, how long the whole was,
 #: and the SHA-256 of the whole, so the two ends kept are never mistaken for the text that was sent.
 TRUNCATION_MARK: Final[str] = "\n[hajer: {omitted} of {length} characters omitted here; sha256:{digest} of the whole]\n"
@@ -185,20 +157,10 @@ CONTENT_TRUNCATED: Final[str] = (
 #: The fewest characters a clipped text keeps, head and tail together. Below it a text says nothing a reader
 #: could use, so a document that does not fit even then is not clipped further.
 _CLIP_FLOOR: Final[int] = 256
-#: What a call observed from another tool's OpenTelemetry spans says, and what the installation receipt says
-#: once any call is (`hajer.instrument().linkage`): the span has no caller frames to link it by.
-LINKAGE_DEGRADED: Final[str] = (
-    "LINKAGE_DEGRADED: observed from another tool's OpenTelemetry gen_ai spans, which carry no caller frames, "
-    "so this call cannot link to a call site by frame."
-)
 #: What an embedding record says about the vectors it was handed back and did not keep.
 EMBEDDING_VECTORS_NOT_RECORDED: Final[str] = (
     "EMBEDDING_VECTORS_NOT_RECORDED: {vectors} vector(s) of {dimensions} dimension(s) came back; only "
     "their count and size are recorded, never their values."
-)
-RAW_WIRE_UNKNOWN: Final[str] = (
-    "HAJER_CAPTURE_RAW is on, but this call is not one of the three provider wires the service reads "
-    "into a model-call receipt, so it ships as a summary and no bytes were captured."
 )
 
 
@@ -224,33 +186,14 @@ class ToolResult:
 
 
 @dataclass(slots=True)
-class RawCapture:
-    """The provider's own request and response document for one call, as the service can read them.
-
-    This is the shape that becomes a `ModelCallReceipt`: the service parses these two documents itself
-    instead of taking the summary beside them, so what the receipt says about the model, the tokens and
-    the finish reason comes from the provider rather than from this SDK's reading of it.
-
-    `truncated` is the SDK saying it clipped `response_body` to stay inside `HAJER_WRAPPED_CALL_MAX_BYTES`;
-    the service then refuses to read a receipt from it. A text of `request` over the bound is clipped in its
-    middle instead and marked in-band: its head and tail stay around `TRUNCATION_MARK`, which states its
-    full length and SHA-256, so the request is still the request's own shape and says where it was cut.
-    """
-
-    wire: Wire
-    request: JsonObject
-    response_body: str = ""
-    response_status: int = _ANSWERED_STATUS
-    truncated: bool = False
-
-
-@dataclass(slots=True)
 class WrappedCall:
     """One instrumented provider call. Filled in as the call proceeds; read it after it returns."""
 
     provider: Provider
     api: Api
     started_at: str
+    #: The same instant as `started_at`, as epoch nanoseconds: what a span is backdated to when the call settles.
+    started_ns: int = 0
     model: str | None = None
     request_settings: JsonObject = field(default_factory=dict)
     declared_tools: tuple[str, ...] = ()
@@ -265,114 +208,37 @@ class WrappedCall:
     finish_reason: str | None = None
     error: str | None = None
     error_type: str | None = None
+    #: The HTTP status the provider's exception carried, when it carried one; a connection that never opened has none.
+    error_status: int | None = None
     retries: int = 0
     streamed: bool = False
     stream_complete: bool | None = None
     stream_chunks: int = 0
     content: JsonObject | None = None
-    raw: RawCapture | None = None
     #: Caller-declared workflow, not a static callable or a unique execution id. Taken at call start.
     workflow_hint: str | None = None
-    #: The application's own frames above this call, innermost first (`_frames.py`). Recorded with
-    #: the raw capture and under the same consent: a frame is a location in the customer's own source,
-    #: which is strictly less than the prompt bytes beside it, and without it a stored provider request
-    #: is a prompt with no address.
+    #: The application's own frames above this call, innermost first (`_frames.py`): a frame is a location in
+    #: the customer's own source, which is strictly less than the prompt beside it, and without it a recorded
+    #: call is a prompt with no address.
     caller_frames: tuple[CallerFrame, ...] = ()
     #: `host:port` of the provider endpoint the wrapped client talks to, read off its `base_url`, or
-    #: `None` when the client names none. The service keys an integration failure on it.
+    #: `None` when the client names none.
     provider_host: str | None = None
-    #: Where the paths the application read off this reply accumulate while it is reading them
-    #: (`_reads.py`). `None` unless `HAJER_RECORD_REPLY_READS` is on, and `reply_reads` is empty with
-    #: `REPLY_READS_NOT_RECORDED` on the limitations rather than looking like "nothing was read".
-    read_sink: ReadSink | None = None
     #: What this record could not observe, in prose, one sentence each. Read by the caller
-    #: (`hajer.wrapped_calls()[0].limitations`), by the SDK's own tests, and — since the wire lane added
-    #: `WrappedCallSummaryIn.limitations` — by the service: a streamed call with no usage says so rather
-    #: than looking like a call that spent no tokens. Summaries only; a raw capture carries the provider's
-    #: own bytes and `WrappedCallCaptureIn` is closed without this field.
+    #: (`hajer.wrapped_calls()[0].limitations`), by the SDK's own tests and by the span emitter: a streamed
+    #: call with no usage says so rather than looking like a call that spent no tokens.
     limitations: tuple[str, ...] = ()
     #: An embedding call's answer, as (vectors, dimensions per vector — None when unreadable): what came
-    #: back, without the vectors. Not on the summary's wire; the attach output carries it.
+    #: back, without the vectors.
     embedding: tuple[int, int | None] | None = field(default=None, repr=False)
+    #: Whatever the call observer handed back when this call opened (`CallObserver.opened`), returned to it
+    #: when the call settles. Opaque here: it is the observer's own.
+    observer_handle: object | None = field(default=None, repr=False)
 
     def note(self, limitation: str) -> None:
         """Record one thing this call could not observe, once."""
         if limitation not in self.limitations:
             self.limitations = (*self.limitations, limitation)
-
-    @property
-    def reply_reads(self) -> tuple[str, ...]:
-        """The paths the application read off this reply, in first-read order. Empty when unrecorded.
-
-        Read at submission rather than at settlement on purpose: the application reads the answer
-        *after* the provider call returns, so a set taken when the record settled would be the set
-        of reads the SDK itself made.
-        """
-        return () if self.read_sink is None else self.read_sink.paths
-
-    def to_wire(self) -> JsonObject:
-        """The camelCase shape the ingest envelope carries as one element of `wrappedCalls`.
-
-        Two shapes, and which one goes out is which one this record actually holds. A `raw` capture is
-        the provider's own bytes and becomes a receipt on the other side; without one the summary goes,
-        and the service counts it as a call it was told about and shown no bytes of. The two shapes are
-        disjoint on the wire — the service's own schemas forbid unknown fields either way — so a
-        summary can never be mistaken for a capture with pieces missing.
-        """
-        if self.raw is not None:
-            capture: JsonObject = {
-                "wire": self.raw.wire,
-                "request": dict(self.raw.request),
-                "responseBody": self.raw.response_body,
-                "responseStatus": self.raw.response_status,
-                "startedAt": self.started_at,
-                "durationMs": self.duration_ms,
-                "streamed": self.streamed,
-                "truncated": self.raw.truncated,
-                "callerFrames": [frame.to_wire() for frame in self.caller_frames],
-                # `null` when no sink was opened and a list when one was: an empty list is "the
-                # application read nothing", `null` is "which fields it read was not observed", and a
-                # reader that could not tell the two apart would count unrecorded calls as sinkless.
-                "replyReads": None if self.read_sink is None else list(self.reply_reads),
-            }
-            if self.workflow_hint is not None:
-                capture["workflowHint"] = self.workflow_hint
-            return capture
-        body: JsonObject = {
-            "provider": self.provider,
-            "api": self.api,
-            "startedAt": self.started_at,
-            "model": self.model,
-            "requestSettings": dict(self.request_settings),
-            "declaredTools": list(self.declared_tools),
-            "messageCount": self.message_count,
-            "messageRoles": list(self.message_roles),
-            "durationMs": self.duration_ms,
-            "usage": dict(self.usage),
-            "toolCalls": [{"id": call.id, "name": call.name, "arguments": call.arguments} for call in self.tool_calls],
-            "toolResults": [
-                {"toolUseId": result.tool_use_id, "isError": result.is_error, "content": result.content}
-                for result in self.tool_results
-            ],
-            "responseId": self.response_id,
-            "finishReason": self.finish_reason,
-            "error": self.error,
-            "errorType": self.error_type,
-            "retries": self.retries,
-            "streamed": self.streamed,
-            "streamComplete": self.stream_complete,
-            "streamChunks": self.stream_chunks,
-            "limitations": list(self.limitations),
-        }
-        if self.content is not None:
-            body["content"] = dict(self.content)
-        if self.workflow_hint is not None:
-            body["workflowHint"] = self.workflow_hint
-        if self.caller_frames:
-            body["callerFrames"] = [frame.to_wire() for frame in self.caller_frames]
-        if self.provider_host is not None:
-            body["providerHost"] = self.provider_host
-        return body
 
 
 # ── the per-task context, and the per-operation scope above it ───────────────────────────────────
@@ -533,42 +399,49 @@ def _record(call: WrappedCall, settings: HajerSettings) -> WrappedCall:
     return call
 
 
-# ── the settled hook: what attach mode listens to ────────────────────────────────────────────────
+# ── the call observer: what the span emitter listens to ──────────────────────────────────────────
 
-#: Called with one finished call, after the record is complete, when the process has attached
-#: (`hajer.attach()`). `_attach.py` is the only thing that ever sets it, and it is a hook rather than
-#: an import because this module imports nothing of the SDK above `_settings` and never will.
-SettledHook: TypeAlias = Callable[[WrappedCall], None]
+
+class CallObserver(Protocol):
+    """What is told about every call this module records: once when it opens, once when it settles.
+
+    `opened` runs where the call is made, inside the caller's own context, and whatever it returns comes
+    back as `handle` at `settled` — which may run in another task or thread (a stream is consumed wherever
+    the application consumes it). That is the whole reason the seam has two phases: the context a span
+    belongs to exists at open and is gone by settle.
+    """
+
+    def opened(self, call: WrappedCall) -> object | None: ...
+    def settled(self, call: WrappedCall, handle: object | None) -> None: ...
 
 
 @dataclass(slots=True)
-class _Attachment:
-    """The process-wide hook, in a holder rather than a rebound module global.
+class _Observation:
+    """The process-wide observer, in a holder rather than a rebound module global.
 
     One object whose field is written is the same fact as a `global` statement and reads as what it is:
-    there is at most one attachment in a process, and `hajer.attach()` / `hajer.detach()` are the only
-    two things that ever write it.
+    there is at most one observer in a process, and `hajer._telemetry` is the only thing that ever writes it.
+    It is a seam rather than an import because this module imports nothing of the SDK above `_settings`.
     """
 
-    hook: SettledHook | None = None
+    observer: CallObserver | None = None
 
 
-_ATTACHMENT = _Attachment()
+_OBSERVATION = _Observation()
 
 
-def set_settled_hook(hook: SettledHook | None) -> None:
-    """Install (or remove) the hook every settled call is handed to. `hajer.attach()`'s seam."""
-    _ATTACHMENT.hook = hook
+def set_call_observer(observer: CallObserver | None) -> None:
+    """Install (or remove) the observer every recorded call is handed to. `hajer._telemetry`'s seam."""
+    _OBSERVATION.observer = observer
 
 
-def settled_hook() -> SettledHook | None:
-    return _ATTACHMENT.hook
+def call_observer() -> CallObserver | None:
+    return _OBSERVATION.observer
 
 
-def accept_call(call: WrappedCall, settings: HajerSettings) -> None:
-    """Alternate capture seams enter the same bounded observation and exporter path."""
-    _record(call, settings)
-    _settled(call)
+#: The call this module is recording in this context right now: its provider method is running. Read by
+#: the span emitter to tell a span another instrumentation starts *inside* a call from a call of its own.
+OPEN_CALL: contextvars.ContextVar[WrappedCall | None] = contextvars.ContextVar("hajer_open_call", default=None)
 
 
 def record_http_exchange(
@@ -590,8 +463,13 @@ def record_http_exchange(
     call = _begin(provider, api, dict(request), settings, streams=streamed)
     call.stream_complete = complete if streamed else None
     call.duration_ms = (time.monotonic_ns() - started_ns) // _NS_PER_MS
+    call.started_ns -= call.duration_ms * _NS_PER_MS  # begun when the request left, not when its body ended
     if error is not None:
         _fail(call, error, started_ns)
+    elif status >= _HTTP_FAILURE:
+        call.error = f"HTTP {status}"
+        call.error_type = "HTTPStatus"
+        call.error_status = status
     elif not streamed and not truncated:
         parsed: JsonValue = json.loads(body)
         read = {"messages": read_message, "responses": read_responses_answer}.get(api, read_chat_completion)
@@ -604,11 +482,9 @@ def record_http_exchange(
         content = call.content or {}
         content["responseBody"] = body.decode("utf-8", errors="replace")
         call.content = content
-    if call.raw is not None:
-        call.raw.response_body = body.decode("utf-8", errors="replace")
-        call.raw.response_status = status
-        call.raw.truncated = truncated or (streamed and not complete)
-    accept_call(call, settings)
+    _record(call, settings)
+    _opened(call)
+    _settled(call)
     return call
 
 
@@ -646,6 +522,7 @@ def open_http_call(*, method: str, url: str, host: str | None, settings: HajerSe
         provider="http",
         api=method.upper(),
         started_at=datetime.now(UTC).isoformat(),
+        started_ns=time.time_ns(),
         request_settings={"method": method.upper(), "url": url},
     )
     scope_sink = _SCOPE.get()
@@ -654,7 +531,9 @@ def open_http_call(*, method: str, url: str, host: str | None, settings: HajerSe
     if settings.capture_call_site:
         _call_site(call, settings)
         call.provider_host = host
-    return _record(call, settings)
+    _record(call, settings)
+    _opened(call)
+    return call
 
 
 def settle_http_call(
@@ -700,65 +579,28 @@ def run_installers(settings: HajerSettings) -> None:
             pass
 
 
-#: Called with every settled call and the label of the operation it settled in — inside a scope as
-#: well as outside one, because a recorder that skipped the calls an operation claimed would hold
-#: exactly the traffic an instrumented application declares. `_observe_sink.py` is the only thing that
-#: sets it, and it is a hook for the same reason `SettledHook` is: this module imports nothing above
-#: `_settings`.
-RecordedHook: TypeAlias = Callable[[WrappedCall, str], None]
+def _opened(call: WrappedCall) -> None:
+    """Tell the observer a call opened, and keep what it answered for the settle. Never raises.
 
-
-@dataclass(slots=True)
-class _Recording:
-    """The process-wide recorder, in a holder rather than a rebound module global."""
-
-    hook: RecordedHook | None = None
-
-
-_RECORDING = _Recording()
-
-
-def set_recorded_hook(hook: RecordedHook | None) -> None:
-    """Install (or remove) the recorder every settled call is handed to. The file sink's seam."""
-    _RECORDING.hook = hook
-
-
-def _recorded(call: WrappedCall) -> None:
-    """Hand one finished call to the recorder, whether or not an operation claimed it.
-
-    The label is the operation's, so a reader can tell one declared operation's calls from another's;
-    a call settled outside every scope is labelled `process`, which is all the SDK knows about it.
-
-    Nothing this does may reach the caller, for the same reason `_settled` may not: it runs inside
-    somebody's provider call.
+    It runs inside somebody's provider call, and a monitoring path that raises into a request path is
+    worse than a missing span.
     """
-    hook = _RECORDING.hook
-    if hook is None:
+    observer = _OBSERVATION.observer
+    if observer is None:
         return
-    sink = _SCOPE.get()
     try:
-        hook(call, "process" if sink is None else sink.label)
-    except Exception:  # noqa: BLE001, S110 - recording a call may never break the call
+        call.observer_handle = observer.opened(call)
+    except Exception:  # noqa: BLE001, S110 - observing a call may never break the call
         pass
 
 
 def _settled(call: WrappedCall) -> None:
-    """Hand one finished call to the attachment, unless an operation has claimed it.
-
-    Inside a `scope()` the call belongs to the operation and its `verify` carries it; emitting an
-    observation of the same call here as well would report it twice. Outside every scope there is
-    nobody to attach it to, and that is exactly what attach mode is for.
-
-    Nothing this hook does may reach the caller: it runs inside somebody's provider call, and a
-    monitoring path that raises into a request path is worse than a missing observation.
-    """
-    remember(call)
-    _recorded(call)
-    hook = _ATTACHMENT.hook
-    if hook is None or _SCOPE.get() is not None:
+    """Hand one finished call to the observer, with the handle it was given at open. Never raises."""
+    observer = _OBSERVATION.observer
+    if observer is None:
         return
     try:
-        hook(call)
+        observer.settled(call, call.observer_handle)
     except Exception:  # noqa: BLE001, S110 - observing a call may never break the call
         pass
 
@@ -796,28 +638,27 @@ def _as_mapping(value: object) -> dict[str, object]:
     return {}
 
 
-def _jsonable(value: object, *, depth: int = 0, limit: int = _JSON_MAX_DEPTH) -> JsonValue:
+def _jsonable(value: object, *, depth: int = 0) -> JsonValue:
     """A JSON value for anything, without ever raising: an unknown object becomes its type name.
 
-    `limit` is how deep to walk. The default is the shallow one a summary wants — a summary describes a
-    call, so naming the type of the fifth level down loses nothing it claimed to carry. A raw capture
-    passes `_RAW_MAX_DEPTH` instead, because there the document *is* the claim.
+    The walk is shallow (`_JSON_MAX_DEPTH`) on purpose: a record describes a call, so naming the type of
+    the fifth level down loses nothing it claimed to carry.
     """
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
-    if depth >= limit:
+    if depth >= _JSON_MAX_DEPTH:
         return type(value).__name__
     # Both readers are called before any narrowing, so neither is handed a partially-known type.
     sequence = _as_seq(value)
     mapping = _as_mapping(value)
     if sequence or isinstance(value, (list, tuple)):
-        return [_jsonable(item, depth=depth + 1, limit=limit) for item in sequence]
+        return [_jsonable(item, depth=depth + 1) for item in sequence]
     if mapping or isinstance(value, dict):
-        return {key: _jsonable(item, depth=depth + 1, limit=limit) for key, item in mapping.items()}
+        return {key: _jsonable(item, depth=depth + 1) for key, item in mapping.items()}
     dump = _attr(value, "model_dump")
     if callable(dump):
         try:
-            return _jsonable(_dumped(dump), depth=depth + 1, limit=limit)
+            return _jsonable(_dumped(dump), depth=depth + 1)
         except (TypeError, ValueError):
             return type(value).__name__
     return type(value).__name__
@@ -917,15 +758,18 @@ def _begin(
     capture = settings.capture_content
     scope_sink = _SCOPE.get()
     embedding = api == "embeddings"
-    messages = (
-        _embedding_inputs(kwargs.get("input"))
-        if embedding
-        else _as_seq(kwargs.get("messages") or kwargs.get("input") or kwargs.get("contents"))
-    )
+    given = kwargs.get("messages") or kwargs.get("input") or kwargs.get("contents")
+    if embedding:
+        messages = _embedding_inputs(kwargs.get("input"))
+    elif isinstance(given, str):
+        messages = (given,)  # the Responses API and google-genai take one prompt as a bare string
+    else:
+        messages = _as_seq(given)
     call = WrappedCall(
         provider=provider,
         api=api,
         started_at=datetime.now(UTC).isoformat(),
+        started_ns=time.time_ns(),
         workflow_hint=None if scope_sink is None else scope_sink.workflow_hint,
         model=_as_str(kwargs.get("model")),
         request_settings={
@@ -941,23 +785,23 @@ def _begin(
         pass  # metadata only: the embedded text is not captured, and `read_embeddings` adds the answer's shape
     elif capture:
         call.content = {
-            "system": _jsonable(kwargs.get("system") or kwargs.get("instructions")),
+            "system": _jsonable(_system_instruction(kwargs)),
             "messages": [_jsonable(item) for item in messages],
         }
     _bound_content(call, settings)
     if settings.capture_call_site:
         _call_site(call, settings)
-    if settings.capture_raw:
-        wire = _WIRES.get((provider, api))
-        if wire is None:
-            call.note(RAW_WIRE_UNKNOWN)
-        else:
-            call.raw = RawCapture(wire=wire, request=_request_document(kwargs))
-        # The frames a raw capture carries are the call-site frames above: relative to the project root,
-        # never a home directory, and none at all with `HAJER_CAPTURE_CALL_SITE=0`.
-    if settings.record_reply_reads:
-        call.read_sink = ReadSink()
     return call
+
+
+def _system_instruction(kwargs: dict[str, object]) -> object:
+    """The out-of-band instructions a request carries: Anthropic's `system`, the Responses API's `instructions`,
+    google-genai's `config.system_instruction`. OpenAI chat puts them in the messages, where they already are."""
+    direct = kwargs.get("system") or kwargs.get("instructions")
+    if direct is not None:
+        return direct
+    config = kwargs.get("config")
+    return None if config is None else _member(config, "system_instruction")
 
 
 #: What a frame's file becomes when it lies outside the project root: this marker and its basename only.
@@ -1054,16 +898,6 @@ def host_of(base: object) -> str | None:
     return f"{host}:{port}" if host.startswith("[") or _HOSTNAME.fullmatch(host) else None
 
 
-def _request_document(kwargs: dict[str, object]) -> JsonObject:
-    """Everything the caller passed, as a JSON document: the provider request, not a selection from it.
-
-    `request_settings` records the keys that are evidence about the call; this is the other thing, and
-    the difference is the point of raw capture. A value that will not survive a JSON round trip becomes
-    its type name rather than raising inside somebody's request path.
-    """
-    return {key: _jsonable(value, limit=_RAW_MAX_DEPTH) for key, value in kwargs.items()}
-
-
 def _encoded(value: JsonValue) -> str:
     """One document as the bytes that will go on the wire, so the bound is measured and not guessed."""
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -1133,45 +967,6 @@ def _bound_content(call: WrappedCall, settings: HajerSettings) -> None:
     if clipped and isinstance(document, dict):
         call.content = document
         call.note(CONTENT_TRUNCATED)
-
-
-def _bound_raw(call: WrappedCall, settings: HajerSettings) -> None:
-    """Fit the capture inside `HAJER_WRAPPED_CALL_MAX_BYTES`, clipping texts in the middle rather than dropping them.
-
-    The request keeps at least half the bound, or whatever the answer leaves; an over-long text in it keeps its
-    head and tail around its full length and digest (`TRUNCATION_MARK`), so the document is still the request's
-    own shape and says in its own text where it was cut. The response document is fitted the same way into what
-    is left, and only then is the capture `truncated`: the service reads that flag as "the response was clipped"
-    and refuses to read a receipt from it. Only a document whose shape alone does not fit ships as a summary.
-    """
-    raw = call.raw
-    if raw is None:
-        return
-    maximum = settings.wrapped_call_max_bytes
-    answer = raw.response_body.encode("utf-8")
-    request = fitted(raw.request, max(maximum - len(answer), maximum // 2))
-    if request is None or not isinstance(request[0], dict):
-        call.raw = None
-        return
-    raw.request = request[0]
-    if request[1]:
-        # Marked in the text itself: `truncated` is the service's word for a clipped *response*, which it
-        # then refuses to read, and this response is whole.
-        call.note(CONTENT_TRUNCATED)
-    budget = maximum - len(_encoded(raw.request).encode("utf-8"))
-    if budget <= 0:
-        call.raw = None
-        return
-    if len(answer) > budget:
-        raw.truncated = True
-        try:
-            document: JsonValue = json.loads(answer)
-        except ValueError:
-            document = None
-        response = None if document is None else fitted(document, budget)
-        raw.response_body = (
-            _encoded(response[0]) if response is not None else answer[:budget].decode("utf-8", errors="ignore")
-        )
 
 
 # ── response side ────────────────────────────────────────────────────────────────────────────────
@@ -1284,10 +1079,6 @@ def record_answer(
         content["output"] = texts
         call.content = content
         _bound_content(call, settings)
-    if call.raw is not None:
-        call.raw.response_body = _encoded(_jsonable(response, limit=_RAW_MAX_DEPTH))
-        call.raw.response_status = _ANSWERED_STATUS
-        _bound_raw(call, settings)
 
 
 def read_chat_completion(call: WrappedCall, response: object, settings: HajerSettings) -> None:
@@ -1472,19 +1263,7 @@ def _fail(call: WrappedCall, exc: BaseException, started_ns: int) -> None:
     call.duration_ms = (time.monotonic_ns() - started_ns) // _NS_PER_MS
     call.error = str(exc)
     call.error_type = type(exc).__qualname__
-    if call.raw is None:
-        return
-    # A capture needs a status line and a body, and a call that raised may have neither. When the
-    # provider's exception carries a status the capture records it with whatever body the exception
-    # names; when it does not — a connection that never opened — there is nothing to capture, and the
-    # summary already says exactly that (`error`, `errorType`), so the capture is dropped rather than
-    # invented. `errors` is not on the capture's wire shape; it is in the body the service reads.
-    status = _status_of(exc)
-    if status is None:
-        call.raw = None
-        return
-    call.raw.response_status = status
-    call.raw.response_body = _encoded({"error": {"type": call.error_type, "message": call.error}})
+    call.error_status = _status_of(exc)
 
 
 # ── the streamed-response proxies ────────────────────────────────────────────────────────────────
@@ -1652,18 +1431,6 @@ def _surfaces(client: object) -> list[_Surface]:
     return found
 
 
-def _no_raw_for_a_stream(call: WrappedCall) -> None:
-    """A streamed answer has no raw capture, because this seam never sees the bytes it would be.
-
-    The service reads a streamed capture as the server-sent-event stream it was, folding the frames back
-    into one reading. What crosses `wrap` is the provider's *parsed* chunk objects — the SSE framing is
-    gone below this seam — so a capture built here would be a reassembly wearing the bytes' clothes. The
-    summary already carries what this seam did observe: `streamed`, `streamComplete`, `streamChunks`,
-    the usage the final chunk named and, with content capture, the accumulated text.
-    """
-    call.raw = None
-
-
 def _proxy(result: object, recorder: StreamRecorder) -> object:
     """The proxy that matches the stream the provider handed back, sync or async.
 
@@ -1696,10 +1463,11 @@ def _open(
             install_task_frames()  # the tasks this call's framework creates next carry its frames, on any loop
         call = _begin(provider, api, kwargs, settings, streams=streams)
         call.provider_host = provider_host if settings.capture_call_site else None
-        claim(kwargs.get("model"), call)
-        return _record(call, settings)
+        _record(call, settings)
     except Exception:  # noqa: BLE001 - beginning a record may never break the call it is about
         return None
+    _opened(call)
+    return call
 
 
 def _note_failure(call: WrappedCall, exc: BaseException, started_ns: int) -> None:
@@ -1716,7 +1484,6 @@ def _stream_proxy(
 ) -> object | None:
     """The proxy over a streamed answer, or `None` when one could not be built."""
     try:
-        _no_raw_for_a_stream(call)
         return _proxy(result, stream_recorder(call, settings, started_ns, read=read))
     except Exception:  # noqa: BLE001 - a proxy that cannot be built is a missing record, not a failed call
         return None
@@ -1740,23 +1507,7 @@ def _settle_sync(
         proxy = _stream_proxy(result, call, settings, started_ns, read)
         return result if proxy is None else proxy
     _close(result, call, settings, started_ns, read)
-    return _viewed(result, call)
-
-
-def _viewed(result: object, call: WrappedCall) -> object:
-    """The answer, or a delegating view of it that records which of its fields the caller reads.
-
-    Only when `HAJER_RECORD_REPLY_READS` opened a sink. A view that cannot be built is a missing
-    observation and never a failed call, which is why the caller's own object is what comes back
-    from the `except`.
-    """
-    sink = call.read_sink
-    if sink is None:
-        return result
-    try:
-        return recording(result, sink)
-    except Exception:  # noqa: BLE001 - a view that cannot be built may never replace the answer
-        return result
+    return result
 
 
 async def _settle_async(
@@ -1859,7 +1610,6 @@ class _RawBody:
         try:
             self.read(self.call, json.loads(body), self.settings)
         except Exception:  # noqa: BLE001 - an unreadable answer is a limitation of the record, not its end
-            self.call.raw = None
             self.call.note(RAW_RESPONSE_UNREADABLE)
 
     def end(self, complete: bool, error: BaseException | None) -> None:
@@ -1879,14 +1629,11 @@ class _RawBody:
             _fail(call, error, self.started_ns)
         if call.streamed:
             self._event(bytes(self.line))
-            _no_raw_for_a_stream(call)
             call.stream_complete = complete
             if not call.usage:
                 call.note(STREAM_USAGE_UNOBSERVED)
         elif complete and self.buffer and not self.overflowed:
             self._answer(bytes(self.buffer))
-        else:
-            call.raw = None  # no whole body, so no provider document to read into a receipt
         if not self.received:
             call.note(RAW_RESPONSE_NOT_READ)
         elif not complete or self.overflowed:

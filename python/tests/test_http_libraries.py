@@ -2,8 +2,8 @@
 
 Every test runs once per library: httpx, and httpx2 when this environment has it (a visible skip when it does not; it
 is never vendored). What is asserted is the seam the SDK patches or wraps in each library — the default transports
-under `HAJER_CAPTURE_HTTP`, a `CaptureTransport` around the library's own transport, and `record_boundaries` — answered
-in memory, in the library's own classes, with no socket opened.
+under `HAJER_CAPTURE_HTTP` and a `CaptureTransport` around the library's own transport — answered in memory, in the
+library's own classes, with no socket opened.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import httpx
 import pytest
 
 import hajer
-from hajer._boundary import taken_boundaries
 from hajer._http_libraries import HTTPX, HttpLibrary, libraries
 from hajer._json import JsonObject
 from hajer._settings import HajerSettings
@@ -168,25 +167,6 @@ def test_a_capture_transport_wraps_the_librarys_own_transport(name: str) -> None
         response = http.post("http://models.invalid/v1/chat/completions", json={"model": "gpt-5.1"})
     assert (type(response), response.json()) == (lib.response, CHAT)
     assert [call.response_id for call in operation.calls] == ["chat-1"]
-
-
-@LIBRARY
-def test_record_boundaries_records_the_librarys_calls(name: str) -> None:
-    lib = library(name)
-    settings = HajerSettings(boundary_body_max_bytes=64, boundary_responses_max=4)
-    with lib.client(transport=_Answers(lib), base_url="https://crm.internal") as http:
-        with hajer.record_boundaries(hosts=["crm.internal"], settings=settings):
-            http.get("/customers/c-1", params={"expand": "tier"})
-            recorded = taken_boundaries()
-    assert isinstance(recorded, dict)
-    (entry,) = cast(list[JsonObject], recorded["responses"])
-    assert (entry["host"], entry["path"], entry["query"], entry["status"]) == (
-        "crm.internal",
-        "/customers/c-1",
-        "expand=tier",
-        200,
-    )
-    assert json.loads(str(entry["body"])) == {"customer": "c-1", "tier": "gold"}
 
 
 def test_httpx_is_always_first_and_a_fork_is_named_once() -> None:

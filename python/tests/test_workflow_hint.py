@@ -10,14 +10,13 @@ import hajer
 from tests.fakes import FakeAsyncOpenAI, FakeOpenAI
 
 
-@pytest.mark.parametrize("raw", [False, True])
-def test_hint_is_captured_without_changing_provider_request(raw: bool) -> None:
-    client = hajer.wrap(FakeOpenAI(), settings=hajer.HajerSettings(capture_content=raw, capture_raw=raw))
+@pytest.mark.parametrize("content", [False, True])
+def test_hint_is_captured_without_changing_provider_request(content: bool) -> None:
+    client = hajer.wrap(FakeOpenAI(), settings=hajer.HajerSettings(capture_content=content))
     with hajer.scope(workflow="support-answer") as operation:
         client.chat.completions.create(model="fake", messages=[])
     call = operation.calls[0]
     assert call.workflow_hint == "support-answer"
-    assert call.to_wire()["workflowHint"] == "support-answer"
     assert "workflowHint" not in client.completions.calls[0]
     assert "workflow" not in client.completions.calls[0]
 
@@ -33,9 +32,9 @@ def test_nested_scopes_restore_names_and_do_not_inherit_implicitly() -> None:
         client.chat.completions.create(model="fake", messages=[])
     assert [call.workflow_hint for call in outer.calls] == ["outer", "outer"]
     assert inner.calls[0].workflow_hint == "inner"
-    assert "workflowHint" not in unnamed.calls[0].to_wire()
+    assert unnamed.calls[0].workflow_hint is None
     client.chat.completions.create(model="fake", messages=[])
-    assert "workflowHint" not in hajer.wrapped_calls()[0].to_wire()
+    assert hajer.wrapped_calls()[0].workflow_hint is None
 
 
 async def test_parallel_tasks_keep_their_declared_workflows() -> None:

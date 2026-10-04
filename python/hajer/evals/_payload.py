@@ -57,7 +57,8 @@ class SdkInfo(_Payload):
 
 
 class ConfigInfo(_Payload):
-    """The suite as configured: where it lives, what it says about itself, and which providers it drove."""
+    """The suite as configured: where it lives (relative to the manifest when one drove the run), what it says
+    about itself, and which providers it drove."""
 
     path: str | None = None
     description: str | None = None
@@ -172,6 +173,9 @@ class EvalRunPayload(_Payload):
     engine: EngineInfo
     sdk: SdkInfo
     git: JsonObject | None = None
+    #: The suite's id in the repository's `hajer.yaml`, when a manifest drove the run; `None` for a bare `-c`.
+    #: Additive and optional, so a reader of version 1 that tolerates it reads it and one that ignores it loses nothing.
+    suite_id: str | None = None
     config: ConfigInfo
     filters: Filters
     stats: Stats

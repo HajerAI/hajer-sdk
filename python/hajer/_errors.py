@@ -1,29 +1,24 @@
-"""Every exception this package can raise, and the two places it is allowed to.
+"""Every exception this package can raise, and the few places it is allowed to.
 
-The SDK sits in the customer's own request path, so it is almost entirely non-raising: `verify`
-returns an `unavailable` assessment where another library would raise, and `observe` never raises at
-all. The exceptions here exist for the two moments where silence would be worse than a failure:
+The SDK sits in the customer's own request path, so it is almost entirely non-raising: a span that cannot
+be started, exported or flushed costs the span and never the code it was about. The exceptions here exist
+for the moments where silence would be worse than a failure:
 
-* `HajerConfigError` — a setting the developer wrote is not a number / not a boolean. Raised while
-  the client is being constructed, never during a call. A *missing* key is not a configuration
-  error: it makes the client inert on purpose, so a customer's test suite runs unchanged.
+* `HajerConfigError` — a setting the developer wrote is not a number / not a boolean. Raised where the
+  settings are read, never inside a model call. A *missing* key is not a configuration error: it makes
+  the SDK inert on purpose, so a customer's test suite runs unchanged.
 * `UnsupportedClientError` — `wrap()` was handed an object with no surface it recognises. Returning
   it uninstrumented would mean silently capturing nothing for the rest of the process.
-* `AssessmentUnavailableError` — opt-in only (`Hajer(raise_on_unavailable=True)`), for a caller who
-  would rather see a stack trace than an `unavailable` status.
-* `BodyOverBoundError` — internal; the client turns it into `unavailable{BODY_OVER_BOUND}`. It
-  never reaches application code through `verify` or `observe`.
+* `BodyOverBoundError` — internal; the eval upload turns it into a `BODY_OVER_BOUND` receipt. It never
+  reaches application code.
 * `EvalMetadataError` — `hajer eval` only. Raised inside the eval engine's `beforeAll` hook process
   when a test's `metadata.hajer` is malformed, so the run stops before a single provider call and the
   terminal names the test. That process is the engine's, never the customer's application.
+* `ManifestError` — `hajer eval` only, in its own process: the repository's `hajer.yaml` cannot be
+  read as a manifest, and the terminal names the file and the key.
 """
 
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from hajer._models import Assessment
 
 
 class HajerError(Exception):
@@ -75,9 +70,12 @@ class EvalMetadataError(HajerError):
         self.errors = errors
 
 
-class AssessmentUnavailableError(HajerError):
-    """Raised instead of returning `unavailable`, only when the caller asked for it."""
+class ManifestError(HajerError):
+    """The repository's `hajer.yaml` is not a manifest this reader accepts. Raised only by `hajer eval`."""
 
-    def __init__(self, assessment: Assessment) -> None:
-        super().__init__(f"assessment unavailable: {assessment.reason}")
-        self.assessment = assessment
+    code = "HAJER_INVALID_MANIFEST"
+
+    def __init__(self, path: object, reason: str) -> None:
+        super().__init__(f"{self.code}: {path} {reason}")
+        self.path = str(path)
+        self.reason = reason

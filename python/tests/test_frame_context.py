@@ -32,7 +32,7 @@ async def workflow_beta(client: Framework) -> tuple[str, ...]:
 
 
 async def test_framework_child_task_keeps_caller_and_isolates_concurrent_workflows() -> None:
-    settings = HajerSettings(capture_content=True, capture_raw=True, disabled=True)
+    settings = HajerSettings(capture_content=True, disabled=True)
     client = wrap(Framework(), settings=settings)
     wrap(client, settings=settings)
     alpha, beta = await asyncio.gather(workflow_alpha(client), workflow_beta(client))
@@ -48,7 +48,7 @@ async def test_framework_exception_restores_previous_context() -> None:
         async def ainvoke(self) -> object:
             raise RuntimeError("application failure")
 
-    client = wrap(Broken(), settings=HajerSettings(capture_content=True, capture_raw=True, disabled=True))
+    client = wrap(Broken(), settings=HajerSettings(capture_content=True, disabled=True))
     with pytest.raises(RuntimeError, match="application failure"):
         await workflow_alpha(client)
     assert "workflow_alpha" not in {frame.qualname for frame in frames_for_call()}

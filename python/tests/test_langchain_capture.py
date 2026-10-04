@@ -32,7 +32,7 @@ def framework_is_a_library(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def settings() -> hajer.HajerSettings:
-    return hajer.HajerSettings(capture_content=True, capture_raw=True, disabled=True)
+    return hajer.HajerSettings(capture_content=True, disabled=True)
 
 
 def _line_of(function: Callable[..., object], needle: str) -> int:

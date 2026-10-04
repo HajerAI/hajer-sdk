@@ -1,11 +1,10 @@
 """`hajer.attach()` — the model calls of a whole process, recorded without a line of application code.
 
-`wrap(client)` is one line at construction and `verify(...)` is one line at the sink. Attach mode is the
-answer to a different question: *what is this application actually asking models to do?*, asked of a
-process nobody has instrumented yet. With it on, every provider call made **outside** a `hajer.scope()`
-becomes one `observe` observation of its own, with **no verifier** — the tuple is recorded and nothing is
-verified, because nobody declared anything to verify it against. Inside a scope nothing changes: the call
-belongs to the operation and the operation's `verify` carries it.
+`wrap(client)` is one line at construction. Attach mode is the answer to a different question: *what is
+this application actually asking models to do?*, asked of a process nobody has instrumented yet. With it
+on, every provider client the process builds is instrumented at construction, so every model call it makes
+is recorded and — with `HAJER_API_KEY` and `HAJER_TEAM_ID` set — leaves as a `gen_ai` span of its own
+(`hajer._telemetry`). Nothing else changes: no scope is opened, nothing is declared.
 
     HAJER_ATTACH=1 PYTHONPATH="$(python -m hajer attach-path)" python -m your_app   # no code change
     import hajer.autoattach                                                        # or the one line
@@ -34,25 +33,16 @@ package — the finder wraps the loader the ordinary machinery chose, and the cl
 module object by name after it has executed. A module that is already imported when `attach()` is called
 is patched immediately, so import order does not decide whether capture happens.
 
-**What leaves the process, by default.** One observation per provider call, carrying: provider, api,
-model, the request settings the caller passed, the declared tool names, message count and roles, the
-response id, finish reason, token usage, duration, the tool *names* the model asked for, the error class
-and message when the call raised, and the SDK's own version. **No message text, no tool arguments, no
-tool results, no provider bytes.** With `HAJER_CAPTURE_CONTENT=1` the wrapped call beside the tuple also
-carries message text, tool arguments and tool results; with `HAJER_CAPTURE_RAW=1` as well it carries the
-provider's own request and response documents, and only then does the service mint a model-call receipt
-from them. Redaction happens on the far side before anything persists, and the credential classes are
-removed unconditionally — but the honest statement is the one above: the default discloses shapes, names,
-counts, timing and usage, and every widening of it is a switch somebody set.
+**What leaves the process** is what `hajer._telemetry` says a `gen_ai` span carries, under the same
+switches as every other call: `HAJER_CAPTURE_CONTENT` for message text, tool arguments and tool results,
+`HAJER_CAPTURE_CALL_SITE` for where the call was made. **With no key nothing is sent.** `HAJER_API_KEY` /
+`HAJER_TEAM_ID` absent, or `HAJER_DISABLED=1`, and the attachment is inert: the classes are still
+instrumented (so `hajer.wrapped_calls()` works and a test suite sees the same records), and no socket is
+opened.
 
-**With no key nothing is sent.** `HAJER_API_KEY` / `HAJER_TEAM_ID` absent, or `HAJER_DISABLED=1`, and the
-attachment is inert: the classes are still instrumented (so `hajer.wrapped_calls()` works and a test suite
-sees the same records), every observation is a `disabled` receipt, and no socket is opened.
-
-**What it costs the call it observes.** One dict per call and one bounded in-memory queue; the flush is a
-background thread of the SDK's own synchronous client. The hook is wrapped in a `try` at the seam
-(`_wrap._settled`), because a monitoring path that raises into somebody's request path is worse than a
-missing observation.
+**What it costs the call it observes.** One record per call and one span handed to a batching exporter on
+its own thread. Every step at the seam (`_wrap._opened`, `_wrap._settled`) is wrapped in a `try`, because
+a monitoring path that raises into somebody's request path is worse than a missing span.
 """
 
 from __future__ import annotations
@@ -67,13 +57,9 @@ from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Final
 
-import httpx
-
 from hajer import _targets_genai, _targets_litellm, _wrap
-from hajer._client import Hajer
 from hajer._settings import HajerSettings
 from hajer._targets import Support, Target
-from hajer._wrap import WrappedCall
 
 #: The libraries attach mode watches for. The two provider clients `wrap` reads, their Azure and Bedrock
 #: and Vertex variants (the same `create` behind a different constructor), the two LangChain packages
@@ -169,8 +155,7 @@ class Attachment:
     """What one `attach()` did: the classes it instrumented, and whether anything can be sent.
 
     `inert` is the honest half. An attachment with no credential still instruments everything — a test
-    suite sees the same `wrapped_calls()` it would in production — and every observation it makes is a
-    `disabled` receipt that never reaches a socket.
+    suite sees the same `wrapped_calls()` it would in production — and nothing it records reaches a socket.
     """
 
     classes: tuple[str, ...]
@@ -182,7 +167,7 @@ class Attachment:
         where = ", ".join(self.modules) or "no provider library imported yet"
         return (
             f"hajer attached to {len(self.classes)} client classes ({where}); "
-            f"{'inert: no key, nothing is sent' if self.inert else 'observing outside every scope'}"
+            f"{'inert: no key, nothing is sent' if self.inert else 'exporting every model call as a span'}"
         )
 
 
@@ -198,7 +183,6 @@ class _State:
     """
 
     settings: HajerSettings | None = None
-    client: Hajer | None = None
     finder: _AttachFinder | None = None
     classes: list[str] = field(default_factory=list)
     modules: list[str] = field(default_factory=list)
@@ -337,31 +321,18 @@ class _AttachFinder(importlib.abc.MetaPathFinder):
         return spec
 
 
-# ── the emitter ──────────────────────────────────────────────────────────────────────────────────
-
-
-def _observe(call: WrappedCall) -> None:
-    """One settled provider call, as its own observation. `_wrap._settled` calls this, or nothing does."""
-    client = _STATE.client
-    if client is None:  # pragma: no cover - the hook is installed with the client, and removed with it
-        return
-    client.observe_call(call)
-
-
 # ── the two public calls ─────────────────────────────────────────────────────────────────────────
 
 
-def attach(*, settings: HajerSettings | None = None, transport: httpx.BaseTransport | None = None) -> Attachment:
-    """Instrument this process: every provider call outside a `hajer.scope()` becomes one observation.
+def attach(*, settings: HajerSettings | None = None) -> Attachment:
+    """Instrument this process: every provider client built from here on records, and exports, its model calls.
 
     Idempotent — the second call returns the standing attachment and changes nothing. `settings` is a way
-    to attach with settings a caller built themselves; `transport` is a test seam, the same one the two
-    clients take, so the suite can read the bodies an attached process sends without a socket.
+    to attach with settings a caller built themselves.
 
     What it does, in this order and for this reason: instruments the provider libraries that are
-    **already** imported (so import order does not decide whether capture happens), installs the import
-    hook for the ones that are not, opens the SDK's own synchronous client for the observations, and
-    installs the settled hook last — nothing is emitted until there is somewhere to put it.
+    **already** imported (so import order does not decide whether capture happens), then installs the
+    import hook for the ones that are not.
     """
     standing = _STATE.settings
     if standing is not None:
@@ -375,36 +346,27 @@ def attach(*, settings: HajerSettings | None = None, transport: httpx.BaseTransp
     finder = _AttachFinder()
     sys.meta_path.insert(0, finder)
     _STATE.finder = finder
-    _STATE.client = Hajer(settings=resolved, transport=transport)
-    _wrap.set_settled_hook(_observe)
     return _snapshot(resolved)
 
 
 def detach() -> None:
-    """Stop observing, flush what is queued, and remove the import hook. Idempotent.
+    """Stop instrumenting new clients and remove the import hook. Idempotent.
 
     It does **not** un-patch what it patched, and says so rather than pretending. Three things stay as
     they are, each for the same reason — another thread may be inside them right now:
 
     - a **constructor** this module wrapped stays wrapped, though the patch now does nothing, so a client
       constructed after this point is not instrumented at all;
-    - a client **already built and instrumented** keeps recording into the task context exactly as
-      `wrap(client)` alone would (that is `wrap`'s behaviour, and detaching does not undo it);
+    - a client **already built and instrumented** keeps recording and emitting exactly as `wrap(client)`
+      alone would (that is `wrap`'s behaviour, and detaching does not undo it); `HAJER_DISABLED=1` or
+      `HAJER_TRACES_ENABLED=0` is what stops a process from exporting;
     - a **module function** (litellm's `completion` / `acompletion`) and every alias `_targets.rebind`
       moved stay pointing at the replacement.
-
-    In all three cases nothing is *sent*: the settled hook is removed first, so a call recorded after
-    this point belongs to whoever reads `hajer.wrapped_calls()` and to nobody else.
     """
-    _wrap.set_settled_hook(None)
     finder = _STATE.finder
     if finder is not None and finder in sys.meta_path:
         sys.meta_path.remove(finder)
-    client = _STATE.client
-    if client is not None:
-        client.close()
     _STATE.settings = None
-    _STATE.client = None
     _STATE.finder = None
     _STATE.classes.clear()
     _STATE.modules.clear()

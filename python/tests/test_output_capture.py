@@ -108,7 +108,7 @@ async def awaited(value: object) -> object:
     return await cast(Awaitable[object], value) if inspect.isawaitable(value) else value
 
 
-SETTINGS = hajer.HajerSettings(capture_content=True, capture_raw=True, disabled=True)
+SETTINGS = hajer.HajerSettings(capture_content=True, disabled=True)
 CHAT_REQUEST: JsonObject = {"model": "gpt-5.1", "messages": [{"role": "user", "content": "q"}]}
 
 
@@ -141,9 +141,6 @@ async def test_a_raw_response_the_application_parses_is_recorded_as_the_answer(
     call = _only_call(operation)
     assert call.response_id == response_id
     assert call.usage["input_tokens"] == 3
-    assert call.raw is not None
-    assert json.loads(call.raw.response_body)["id"] == response_id
-    assert "LegacyAPIResponse" not in call.raw.response_body
     assert call.content is not None
     assert "the answer" in json.dumps(call.content["output"])
 
@@ -186,4 +183,4 @@ def test_a_provider_model_with_a_serializer_warning_is_read_without_warning(recw
             response_format=Named,
         )
     assert not [warning for warning in recwarn if "serializ" in str(warning.message).lower()]
-    assert _only_call(operation).raw is not None
+    assert _only_call(operation).response_id is not None

@@ -1,22 +1,28 @@
-"""Shared fixtures. No network: every client is built on `httpx.MockTransport`.
+"""Shared fixtures. No network: every HTTP request is answered by an `httpx.MockTransport`.
 
-`recorder()` is the seam every HTTP test uses — it collects the requests the SDK made and answers
-them from a script, so a test asserts on exactly what went on the wire.
+`Recorder` is the seam the upload tests use — it collects the requests the SDK made and answers them
+from a script, so a test asserts on exactly what went on the wire.
 """
 
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
 import pytest
 
 import hajer
+from hajer import _telemetry
 from hajer._json import JsonObject, JsonValue
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+#: A test's way to read what the emitter exported: configure settings, get the in-memory exporter the spans land in.
+Emitting = Callable[[hajer.HajerSettings], "InMemorySpanExporter"]
 
 Responder = Callable[[httpx.Request], httpx.Response]
 
@@ -45,44 +51,6 @@ class Recorder:
 
     def keys(self) -> list[str]:
         return [request.headers["Idempotency-Key"] for request in self.requests]
-
-
-def assessment_json(**overrides: JsonValue) -> JsonObject:
-    """A minimal satisfied assessment on the wire, in the backend's camelCase."""
-    body: JsonObject = {
-        "status": "satisfied",
-        "shadow": False,
-        "findings": [],
-        "missingEvidence": [],
-        "checkOutcomes": [{"check": "refund@1", "reason": "satisfied", "detail": "", "evidenceUsed": ["orderState"]}],
-        "costMicrousd": 120,
-        "latencyMs": 41,
-        "verifier": "refund-policy@1",
-        "observationId": "obs-1",
-    }
-    body.update(overrides)
-    return body
-
-
-def responds(body: JsonObject, *, status: int = 200) -> Responder:
-    def responder(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, json=body)
-
-    return responder
-
-
-def times_out(request: httpx.Request) -> httpx.Response:
-    """Spend the caller's own per-request timeout, then fail the way a real socket does.
-
-    `httpx.MockTransport` does not enforce timeouts, so the handler reads the budget the SDK derived
-    from the deadline out of the request extensions and honours it itself. That keeps the test honest
-    about which clock the SDK is spending.
-    """
-    extensions: Mapping[str, object] = request.extensions
-    timeout = extensions.get("timeout")
-    budget: object = cast(Mapping[str, object], timeout).get("read") if isinstance(timeout, dict) else None
-    time.sleep(float(budget) if isinstance(budget, (int, float)) else 0.05)
-    raise httpx.ReadTimeout("simulated read timeout", request=request)
 
 
 class StreamLike(Protocol):
@@ -165,11 +133,35 @@ def settings() -> hajer.HajerSettings:
         api_key="key-for-tests",
         team_id="team-1",
         base_url="https://hajer.test",
-        deadline_ms_default=500,
-        observe_flush_interval_ms=50,
-        observe_batch_max=8,
-        observe_queue_max=64,
+        eval_upload_backoff_initial_ms=1,
+        eval_upload_backoff_max_ms=2,
     )
+
+
+@pytest.fixture
+def emitting() -> Iterator[Emitting]:
+    """An isolated SDK provider with an in-memory exporter, configured as the emitter's; reset afterwards.
+
+    Skips without `hajer[otel]`. Every span test shares this one seam, so what they assert is what an application
+    with its own provider would see.
+    """
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    export = pytest.importorskip("opentelemetry.sdk.trace.export")
+    memory = pytest.importorskip("opentelemetry.sdk.trace.export.in_memory_span_exporter")
+    providers: list[object] = []
+
+    def configure(settings: hajer.HajerSettings) -> InMemorySpanExporter:
+        exporter = cast("InMemorySpanExporter", memory.InMemorySpanExporter())
+        provider = sdk.TracerProvider()
+        provider.add_span_processor(export.SimpleSpanProcessor(exporter))
+        providers.append(provider)
+        _telemetry.configure(settings, tracer_provider=provider)
+        return exporter
+
+    yield configure
+    _telemetry.configure(None)
+    for provider in providers:
+        cast(Callable[[], None], getattr(provider, "shutdown"))()  # noqa: B009 - an untyped module object
 
 
 @pytest.fixture(autouse=True)
@@ -181,23 +173,7 @@ def _clean_context() -> Iterator[None]:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """`--update-observed-export` rewrites the engine's fixture export from this wrapper's own output.
-
-    A generated artifact, never a typed one: the committed export is what `wrap` records off the
-    fixture application, and without this flag a drift between the two is a failure.
-    """
-    parser.addoption(
-        "--update-observed-export",
-        action="store_true",
-        default=False,
-        help="Rewrite contract/observed-app/export.json from the wrapper.",
-    )
-    parser.addoption(
-        "--update-suite-reference-capture",
-        action="store_true",
-        default=False,
-        help="Rewrite contract/sdk-capture/export.json from the owned outreach app.",
-    )
+    """The two opt-ins: the engine tests, and rewriting the golden engine fixture from a real run."""
     parser.addoption(
         "--engine",
         action="store_true",
@@ -224,15 +200,3 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "engine" in item.keywords:
             item.add_marker(skip)
-
-
-@pytest.fixture
-def update(request: pytest.FixtureRequest) -> bool:
-    """Whether this run may rewrite the generated export."""
-    return bool(request.config.getoption("--update-observed-export"))
-
-
-@pytest.fixture
-def update_suite_capture(request: pytest.FixtureRequest) -> bool:
-    """Whether this run may rewrite the maintained-suite rehearsal's generated capture export."""
-    return bool(request.config.getoption("--update-suite-reference-capture"))

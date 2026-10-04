@@ -229,16 +229,21 @@ async def test_stream_error_is_not_replaced_by_cleanup(asynchronous: bool) -> No
 def test_exporter_failure_does_not_change_provider_answer() -> None:
     from tests.fakes import FakeOpenAI  # noqa: PLC0415
 
-    def broken_export(call: hajer.WrappedCall) -> None:
-        raise RuntimeError("telemetry broke")
+    class BrokenExport:
+        def opened(self, call: hajer.WrappedCall) -> object:
+            raise RuntimeError("telemetry broke at open")
+
+        def settled(self, call: hajer.WrappedCall, handle: object | None) -> None:
+            raise RuntimeError("telemetry broke at settle")
 
     plain = FakeOpenAI()
     wrapped = hajer.wrap(FakeOpenAI())
-    _wrap.set_settled_hook(broken_export)
+    previous = _wrap.call_observer()
+    _wrap.set_call_observer(BrokenExport())
     try:
         assert wrapped.chat.completions.create() == plain.chat.completions.create()
     finally:
-        _wrap.set_settled_hook(None)
+        _wrap.set_call_observer(previous)
 
 
 def sse(provider: str, path: str) -> bytes:

@@ -1,10 +1,15 @@
-"""`hajer eval`: run the pinned engine on the user's promptfoo configuration and produce the platform payload.
+"""`hajer eval`: run the pinned engine on the repository's suites and produce the platform payload for each.
 
 Everything the engine does stays the engine's — configuration, providers, assertions, the exit code. This
-command adds what the platform needs around it: a run id minted before the engine starts (so the spans carry
-it), tracing switched on and the Hajer hook attached through an overlay config, the engine's phone-home paths
-switched off, the results translated into the versioned payload, and an optional upload whose failure is
-reported on its own line and **never changes the exit code**. A green eval with a failed upload is a green eval.
+command adds what the platform needs around it: which suites a repository has (`hajer.yaml`, or the one `-c`
+names), a run id minted before the engine starts (so the spans carry it), tracing switched on and the Hajer hook
+attached through an overlay config, the engine's phone-home paths switched off, the results translated into the
+versioned payload, and an optional upload whose failure is reported on its own line and **never changes the exit
+code**. A green eval with a failed upload is a green eval.
+
+With a manifest and no `-c`, every declared suite is one engine run, one payload and one upload; the command's
+exit code is the worst of them (the engine's 100 when any case failed), and a usage or engine error stops the
+loop where it happened. With `-c`, the manifest only says which obligation ids a test may name.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from hajer._errors import ManifestError
 from hajer._json import JsonObject
 from hajer._settings import HajerSettings, ci_environment_snapshot, eval_engine_environment
 from hajer.evals import _hook_entry
@@ -39,6 +45,7 @@ from hajer.evals._config import (
 from hajer.evals._engine import EngineReady, EngineUnavailable, engine_status, ensure_engine, pinned
 from hajer.evals._git import GitContext, git_context
 from hajer.evals._hook import format_warnings, read_report
+from hajer.evals._manifest import Manifest, find_manifest, load_manifest
 from hajer.evals._payload import EngineInfo, Filters
 from hajer.evals._results import read_results, translate
 from hajer.evals._upload import UploadReceipt, upload_eval_run
@@ -49,6 +56,8 @@ EXIT_USAGE: Final[int] = 2
 EXIT_NODE: Final[int] = 3
 EXIT_ENGINE_INSTALL: Final[int] = 4
 EXIT_NO_RESULTS: Final[int] = 5
+#: The codes that end a manifest run where they happen: the next suite would meet the same problem.
+_STOPPING: Final[frozenset[int]] = frozenset({EXIT_USAGE, EXIT_NO_RESULTS})
 
 #: The engine failures that are the machine's, not the install's: the user installs Node.
 _NODE_REASONS: Final[frozenset[str]] = frozenset({"NODE_MISSING", "NODE_TOO_OLD", "NPM_MISSING"})
@@ -84,12 +93,32 @@ class Runtime:
     stderr: TextIO = field(default_factory=lambda: sys.stderr)
 
 
+@dataclass(frozen=True, slots=True)
+class _Job:
+    """One engine run: the configuration files it is started with, and how the payload names the suite."""
+
+    configs: tuple[Path, ...]
+    #: The suite's id in the manifest, or `None` for a bare `-c`.
+    suite_id: str | None
+    #: Where the engine runs: the manifest's directory for a declared suite (so the git context is the
+    #: repository's), the working directory otherwise.
+    cwd: Path
+    #: What the payload's `config.path` says: relative to the manifest for a declared suite.
+    config_path: str
+
+    @property
+    def label(self) -> str:
+        return "hajer eval" if self.suite_id is None else f"hajer eval (suite {self.suite_id})"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hajer eval",
         description=(
-            "Run a promptfoo configuration on the pinned eval engine and produce the Hajer payload. "
-            "Every flag not listed here is handed to `promptfoo eval` unchanged (`hajer eval --engine-help`)."
+            "Run the repository's eval suites on the pinned engine and produce the Hajer payload for each. "
+            "With no -c, every suite hajer.yaml declares runs (--suite ID for one); without a manifest, promptfoo's "
+            "own promptfooconfig.* in the working directory. Every flag not listed here is handed to `promptfoo eval` "
+            "unchanged (`hajer eval --engine-help`)."
         ),
     )
     parser.add_argument(
@@ -98,8 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="PATH",
-        help="A promptfoo configuration file (repeatable). Default: promptfoo's own promptfooconfig.* in the working directory.",
+        help="A promptfoo configuration file (repeatable); the manifest's suites are not run when this is given.",
     )
+    parser.add_argument("--suite", metavar="ID", help="Run only the suite hajer.yaml declares under this id")
     parser.add_argument("--workflow", metavar="ID", help="Run only the tests whose metadata.hajer.workflowId is ID")
     parser.add_argument(
         "--obligation",
@@ -111,14 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--upload",
         action="store_true",
-        help="Upload the payload to Hajer (needs HAJER_API_KEY, HAJER_TEAM_ID, a project)",
+        help="Upload each payload to Hajer (needs HAJER_API_KEY and HAJER_TEAM_ID)",
     )
     parser.add_argument(
         "--no-upload", action="store_true", help="Do not upload (the default; named so a CI script can say it)"
     )
-    parser.add_argument("--project-id", metavar="ID", help="The Hajer project to upload to; default HAJER_PROJECT_ID")
     parser.add_argument(
-        "--payload-out", type=Path, metavar="PATH", help="Also write the payload here (default: the run directory)"
+        "--payload-out",
+        type=Path,
+        metavar="PATH",
+        help="Also write the payload here: a file for one suite, a directory of <suite id>.json for several",
     )
     parser.add_argument("--install-only", action="store_true", help="Install the pinned engine into the cache and stop")
     parser.add_argument(
@@ -147,21 +179,106 @@ def main(argv: list[str], *, settings: HajerSettings | None = None, runtime: Run
             runtime.run([engine.node, str(engine.entrypoint), "eval", "--help"], cwd=str(cwd), check=False).returncode
         )
 
-    configs = discover_configs(list(options.config), cwd)
-    if not configs:
-        err.write(f"hajer eval: no promptfoo configuration in {cwd}; pass one with -c PATH\n")
-        return EXIT_USAGE
-    missing = [path for path in configs if not path.is_file()]
-    if missing:
-        err.write(f"hajer eval: configuration not found: {', '.join(str(path) for path in missing)}\n")
-        return EXIT_USAGE
+    planned = _plan(options, cwd, err)
+    if isinstance(planned, int):
+        return planned
+    manifest, jobs = planned
+    obligations = tuple(str(item) for item in options.obligation)
+    worst = 0
+    for job in jobs:
+        code = _run(
+            job,
+            engine=engine,
+            manifest=manifest,
+            options=options,
+            passthrough=passthrough,
+            obligations=obligations,
+            several=len(jobs) > 1,
+            settings=settings,
+            runtime=runtime,
+        )
+        if code in _STOPPING:
+            return code
+        worst = max(worst, code)
+    return worst
 
+
+def _plan(options: argparse.Namespace, cwd: Path, err: TextIO) -> tuple[Manifest | None, tuple[_Job, ...]] | int:
+    """Which suites run, from the flags and the manifest — or the usage code that says why none can."""
+    explicit = [str(item) for item in options.config]
+    suite_id = options.suite if isinstance(options.suite, str) else None
+    try:
+        found = find_manifest(cwd)
+        manifest = load_manifest(found) if found is not None else None
+    except ManifestError as invalid:
+        err.write(f"hajer eval: {invalid}\n")
+        return EXIT_USAGE
+    if manifest is not None:
+        declared = manifest.obligation_ids
+        unknown = [item for item in (str(item) for item in options.obligation) if item not in declared]
+        if unknown:
+            err.write(
+                f"hajer eval: --obligation {', '.join(unknown)}: not declared in {manifest.path.name} "
+                f"(declared: {', '.join(declared) or 'none'})\n"
+            )
+            return EXIT_USAGE
+    if explicit:
+        if suite_id is not None:
+            err.write("hajer eval: --suite names a suite of hajer.yaml and cannot be combined with -c\n")
+            return EXIT_USAGE
+        configs = discover_configs(explicit, cwd)
+        missing = [path for path in configs if not path.is_file()]
+        if missing:
+            err.write(f"hajer eval: configuration not found: {', '.join(str(path) for path in missing)}\n")
+            return EXIT_USAGE
+        return manifest, (_Job(configs=configs, suite_id=None, cwd=cwd, config_path=_relative(configs[0], cwd)),)
+    if manifest is None:
+        if suite_id is not None:
+            err.write(f"hajer eval: --suite {suite_id}: no hajer.yaml in {cwd} or above it declares any suite\n")
+            return EXIT_USAGE
+        configs = discover_configs([], cwd)
+        if not configs:
+            err.write(f"hajer eval: no hajer.yaml and no promptfoo configuration in {cwd}; pass one with -c PATH\n")
+            return EXIT_USAGE
+        return None, (_Job(configs=configs, suite_id=None, cwd=cwd, config_path=_relative(configs[0], cwd)),)
+    suites = manifest.suites
+    if suite_id is not None:
+        chosen = manifest.suite(suite_id)
+        if chosen is None:
+            names = ", ".join(suite.id for suite in suites) or "none"
+            err.write(
+                f"hajer eval: --suite {suite_id}: {manifest.path.name} declares no such suite (declared: {names})\n"
+            )
+            return EXIT_USAGE
+        suites = (chosen,)
+    if not suites:
+        err.write(f"hajer eval: {manifest.path} declares no suites; add one, or pass a configuration with -c PATH\n")
+        return EXIT_USAGE
+    return manifest, tuple(
+        _Job(configs=(suite.path,), suite_id=suite.id, cwd=manifest.directory, config_path=suite.declared_path)
+        for suite in suites
+    )
+
+
+def _run(
+    job: _Job,
+    *,
+    engine: EngineReady,
+    manifest: Manifest | None,
+    options: argparse.Namespace,
+    passthrough: list[str],
+    obligations: tuple[str, ...],
+    several: bool,
+    settings: HajerSettings,
+    runtime: Runtime,
+) -> int:
+    """One engine run, start to payload to upload; the exit code is the engine's unless the run could not be read."""
+    err = runtime.stderr
     run_id = runtime.new_run_id()
     started = runtime.now()
     run_dir = run_directory(settings, run_id)
     port = free_port(settings.eval_otlp_port)
     overlay = write_overlay(run_dir, port=port, hook_entry=Path(_hook_entry.__file__).resolve())
-    obligations = tuple(str(item) for item in options.obligation)
     environment = runtime.engine_environment(
         settings,
         run_id=run_id,
@@ -170,13 +287,15 @@ def main(argv: list[str], *, settings: HajerSettings | None = None, runtime: Run
         python_executable=runtime.python_executable,
         workflow=options.workflow,
         obligations=obligations,
+        manifest=None if manifest is None else manifest.path,
+        declared_obligations=() if manifest is None else manifest.obligation_ids,
     )
     results_path = run_dir / RESULTS_NAME
     command: list[str] = [engine.node, str(engine.entrypoint), "eval"]
-    for path in configs:
+    for path in job.configs:
         command.extend(["-c", str(path)])
     command.extend(["-c", str(overlay), "-o", str(results_path), *passthrough])
-    completed = runtime.run(command, cwd=str(cwd), env=environment, check=False)
+    completed = runtime.run(command, cwd=str(job.cwd), env=environment, check=False)
     exit_code = int(completed.returncode)
 
     report = read_report(run_dir / HOOK_REPORT_NAME)
@@ -186,17 +305,17 @@ def main(argv: list[str], *, settings: HajerSettings | None = None, runtime: Run
         errors = report.get("errors")
         if isinstance(errors, list) and errors:
             for item in errors:
-                err.write(f"hajer eval: error {item}\n")
+                err.write(f"{job.label}: error {item}\n")
             return EXIT_USAGE
 
     document = read_results(results_path)
     if document is None:
         if exit_code != 0:
             return exit_code  # the engine said what went wrong; there is nothing to translate
-        err.write(f"hajer eval: the engine finished but {results_path} is not a readable results document\n")
+        err.write(f"{job.label}: the engine finished but {results_path} is not a readable results document\n")
         return EXIT_NO_RESULTS
 
-    git = runtime.git(cwd, runtime.ci_environment(), timeout_s=float(settings.eval_git_timeout_s))
+    git = runtime.git(job.cwd, runtime.ci_environment(), timeout_s=float(settings.eval_git_timeout_s))
     eval_id = document.get("evalId")
     try:
         payload = translate(
@@ -212,37 +331,47 @@ def main(argv: list[str], *, settings: HajerSettings | None = None, runtime: Run
             ),
             exit_code=exit_code,
             git=git.to_wire() if git is not None else None,
-            config_path=_relative(configs[0], cwd),
+            config_path=job.config_path,
             hook_report=report,
             filters=Filters(workflow_id=options.workflow, obligation_ids=obligations),
             settings=settings,
+            suite_id=job.suite_id,
         )
     except ValidationError as error:
         err.write(
-            f"hajer eval: the engine's results document is not one this version can read: {error.error_count()} problems\n"
+            f"{job.label}: the engine's results document is not one this version can read: "
+            f"{error.error_count()} problems\n"
         )
         return exit_code if exit_code != 0 else EXIT_NO_RESULTS
     wire = payload.to_wire()
     payload_path = run_dir / PAYLOAD_NAME
     _write_json(payload_path, wire)
     if options.payload_out is not None:
-        target = options.payload_out if options.payload_out.is_absolute() else cwd / options.payload_out
+        target = _payload_target(options.payload_out, job, several, runtime.cwd or Path.cwd())
         _write_json(target, wire)
         payload_path = target
 
     upload_status = "not requested"
     if options.upload and not options.no_upload:
-        receipt = runtime.upload(wire, settings=settings, project_id=options.project_id, transport=runtime.transport)
+        receipt = runtime.upload(wire, settings=settings, transport=runtime.transport)
         upload_status = receipt.status if receipt.reason is None else f"{receipt.status} ({receipt.reason})"
         if receipt.status != "uploaded":
-            err.write(f"hajer eval: upload {upload_status}; the payload is kept at {payload_path}\n")
+            err.write(f"{job.label}: upload {upload_status}; the payload is kept at {payload_path}\n")
 
     stats = payload.stats
     runtime.stdout.write(
-        f"hajer eval: {payload.status}: {stats.passed}/{stats.total} passed, {stats.failed} failed, "
+        f"{job.label}: {payload.status}: {stats.passed}/{stats.total} passed, {stats.failed} failed, "
         f"{stats.errored} errored; run {run_id}; payload {payload_path}; upload {upload_status}\n"
     )
     return exit_code
+
+
+def _payload_target(asked: Path, job: _Job, several: bool, cwd: Path) -> Path:
+    """`--payload-out` as a file for one run, as a directory holding `<suite id>.json` for several."""
+    target = asked if asked.is_absolute() else cwd.resolve() / asked
+    if several:
+        return target / f"{job.suite_id or 'run'}.json"
+    return target
 
 
 def _relative(path: Path, cwd: Path) -> str:
