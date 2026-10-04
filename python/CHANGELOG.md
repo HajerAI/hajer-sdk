@@ -4,33 +4,59 @@ All notable changes to the `hajer` Python package. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [semantic versioning](https://semver.org/);
 while the version is `0.x`, a minor release may change the public API.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-04
+
+**`verify` and `observe` are removed.** The package is now the tracing SDK for the Hajer platform and the
+`hajer eval` runner: it records every model call and exports traces over OpenTelemetry, and reports CI eval
+runs against the repository's `hajer.yaml`. The platform routes the 0.1.0 client called no longer exist.
 
 ### Added
 
-- `hajer eval` (`pip install "hajer[evals]"`): run an ordinary promptfoo configuration on a pinned copy of
-  promptfoo (installed from npm on first use; Node >= 22.22 on PATH) and produce a versioned payload that
-  connects every result to the workflow it targets, the obligations it covers, its trace and the commit it ran
-  against. `metadata.hajer` is the reserved namespace (`workflowId`, `obligationIds`, `componentIds`,
-  `sourceTraceIds`); `metadata.testCaseId` is the stable case id. `--workflow` / `--obligation` filter the
-  suite, `--upload` sends the payload, and an upload failure never changes the exit code.
-- `hajer.workflow`, `hajer.component` and `hajer.tool`: decorators and context managers that emit
-  OpenTelemetry spans carrying stable ids (`hajer.workflow.id`, `hajer.component.id`, `hajer.tool.id`,
-  `gen_ai.tool.name`), identical in production and under `hajer eval`. Behind `hajer[otel]`, which now also
-  installs the OTLP/HTTP exporter; a no-op with one warning without it.
-- `hajer.evals.provider` / `hajer.evals.bind`: bind a promptfoo Python provider's spans to the row's trace.
-- `hajer` as a console script (`python -m hajer` is unchanged), and an `eval engine` line in `hajer doctor`.
-- Settings: `HAJER_OTLP_ENDPOINT`, `HAJER_TRACE_FLUSH_TIMEOUT_MS`, `HAJER_PROJECT_ID`, `HAJER_CACHE_DIR` and
-  the `HAJER_EVAL_*` family (docs/evals.md).
+- **Traces leave for the platform by default.** With `HAJER_API_KEY` and `HAJER_TEAM_ID`, every span the SDK
+  emits goes to the platform's OTLP/HTTP receiver for the team (`/api/teams/{team_id}/otel/v1/traces`), on the
+  OpenTelemetry provider the process already has — beside its own exporters — or on one the SDK builds and
+  never installs globally. `HAJER_OTLP_ENDPOINT` names a collector of your own instead.
+- **Every recorded model call is a `gen_ai` span**, in the GenAI semantic conventions' words: operation,
+  provider, request and response model, request settings, response id and finish reasons, usage, the
+  endpoint, the application frame, `error.type` on failure, and — with content capture — the messages, the
+  answer and the system instructions as `gen_ai.input.messages` / `gen_ai.output.messages` /
+  `gen_ai.system_instructions` in the conventions' parts shape, for OpenAI chat and Responses, Anthropic,
+  google-genai and litellm alike, redacted first and bounded. Emitted when the call settles, backdated to
+  when it opened, under the span that was current then. Suppressed for a call another instrumentation's
+  `gen_ai` span already covers; `HAJER_MODEL_SPANS=0` turns them off.
+- **`hajer.session`, `hajer.user`, `hajer.context`**: the conversation, declared once (a block or a
+  decorator) and carried as `session.id`, `user.id`, `hajer.tags` and `hajer.metadata.*` by every span
+  inside — the SDK's own and any other OpenTelemetry instrumentation's.
+- **`hajer.yaml`**: the repository's suites and the obligations its tests cover, declared at the root.
+  `hajer eval` with no `-c` runs every declared suite (`--suite ID` for one), refuses an obligation id the
+  manifest does not declare, and names the suite in the payload (`suiteId`, still `schemaVersion: 1`).
+- `hajer.configure(settings=, tracer_provider=, policy=)` and `hajer.flush()` are public; `hajer doctor`
+  prints whether the OpenTelemetry SDK is installed and where spans would go.
+- Settings: `HAJER_TRACES_ENABLED`, `HAJER_MODEL_SPANS`, `HAJER_OTLP_HEADERS`, `HAJER_SERVICE_NAME`,
+  `HAJER_TRACE_EXPORT_TIMEOUT_MS`, `HAJER_TRACE_BATCH_DELAY_MS`, `HAJER_TRACE_QUEUE_MAX`,
+  `HAJER_TRACE_BATCH_MAX`, `HAJER_EVAL_UPLOAD_BACKOFF_INITIAL_MS` / `_MAX_MS`.
+
+### Changed
+
+- `hajer eval --upload` posts to `/api/teams/{team_id}/eval-runs`; the platform places a run by the
+  repository its git context names. `--project-id` and `HAJER_PROJECT_ID` are gone.
+- `attach()` and `instrument()` no longer take a `transport`; `instrument()` no longer takes a
+  `tracer_provider` (pass it to `hajer.configure`). `detach()` stops instrumenting new clients; a client
+  already built keeps emitting, and `HAJER_DISABLED` / `HAJER_TRACES_ENABLED=0` is what stops export.
+- `HAJER_WRAPPED_CALL_MAX_BYTES` bounds one call's content and the three content attributes of its span;
+  `HAJER_BODY_MAX_BYTES` bounds only the raw response body buffered to read an answer.
+- The eval payload's spans also carry the `session.*`, `user.*`, `server.*`, `error.*` and `code.*`
+  attributes; `pyyaml` joins the `evals` extra.
 
 ### Removed
 
-- The CI suites runner: the `hajer.pytest_plugin` pytest plugin and its `hajer[ci]` extra, the guarded
-  replay child (`hajer.replay`), the `upload-results` and `verify-adapters` commands of `python -m hajer`,
-  the `HAJER_CI_*` and `HAJER_ADAPTER_CHECK_ANSWERS` settings, and the composite GitHub Action at
-  `action/`. The application-side SDK (`verify`, `observe`, `wrap`, `scope`, `attach`, `instrument`) is
-  unchanged.
-- The unpublished TypeScript client (`typescript/`, `@hajer/sdk`). This repository ships one package.
+- `hajer.Hajer`, `hajer.AsyncHajer`, `verify`, `observe`, `observations`, the assessment and observation
+  models, `AssessmentUnavailableError`, `record_boundaries`, `observe_sink` / `HAJER_OBSERVE_SINK`,
+  `wire_source`, `python -m hajer tail`, `python -m hajer proxy`, `hajer doctor --emit`, the vendored
+  OpenAPI contract and its generator, the OpenTelemetry *receiver* (`instrument(tracer_provider=…)`) that
+  turned other tools' spans into observations, and the raw-capture and reply-read switches
+  (`HAJER_CAPTURE_RAW`, `HAJER_RECORD_REPLY_READS`, `HAJER_BOUNDARY_*`, `HAJER_PROXY_TIMEOUT_S`,
+  `HAJER_TAIL_*`, `HAJER_DEADLINE_MS_DEFAULT`, `HAJER_OBSERVE_*`, `HAJER_PROJECT_ID`).
 
 ## [0.1.0] - 2026-10-04
 

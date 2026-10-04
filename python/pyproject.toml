@@ -1,6 +1,6 @@
 [project]
 name = "hajer"
-version = "0.1.0"
+version = "0.2.0"
 description = "The Hajer SDK: your application's model calls as traces, and `hajer eval` for the tests that cover them."
 readme = "README.md"
 requires-python = ">=3.11"
