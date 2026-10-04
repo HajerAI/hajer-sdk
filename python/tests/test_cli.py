@@ -75,6 +75,8 @@ class TestDoctor:
         assert rows["HAJER_ATTACH"] == ("default", "false")
         assert f"hajer {VERSION}" in printed
         assert redaction_catalog() in printed
+        assert "otel            opentelemetry-sdk " in printed
+        assert "traces          nowhere: HAJER_API_KEY absent" in printed
 
     def test_the_key_is_never_printed(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -106,6 +108,29 @@ class TestDoctor:
         rows = report["settings"]
         assert isinstance(rows, list)
         assert len(rows) == len(VARIABLES)
+        assert report["traces"] == "nowhere: HAJER_API_KEY and HAJER_TEAM_ID absent: no span leaves this process"
+
+    def test_the_traces_line_names_the_platform_receiver_and_the_collector(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv("HAJER_API_KEY", SECRET)
+        monkeypatch.setenv("HAJER_TEAM_ID", "team-1")
+        monkeypatch.setenv("HAJER_BASE_URL", "https://hajer.test")
+        monkeypatch.delenv("HAJER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        doctor(as_json=True, settings=HajerSettings.from_env(), transport=_answers(200))
+        report = _parsed(capsys.readouterr().out)
+        assert report["traces"] == "https://hajer.test/api/teams/team-1/otel/v1/traces (auth: bearer)"
+        assert SECRET not in json.dumps(report)
+
+        monkeypatch.setenv("HAJER_OTLP_ENDPOINT", "http://collector.internal:4318/")
+        doctor(as_json=True, settings=HajerSettings.from_env(), transport=_answers(200))
+        assert _parsed(capsys.readouterr().out)["traces"] == "http://collector.internal:4318/v1/traces (auth: none)"
+
+        monkeypatch.delenv("HAJER_OTLP_ENDPOINT")
+        monkeypatch.setenv("HAJER_TRACES_ENABLED", "0")
+        doctor(as_json=True, settings=HajerSettings.from_env(), transport=_answers(200))
+        assert _parsed(capsys.readouterr().out)["traces"] == "nowhere: HAJER_TRACES_ENABLED is off"
 
     def test_a_base_url_that_does_not_answer_is_said_so_rather_than_raised(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

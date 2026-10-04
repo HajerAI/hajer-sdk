@@ -9,6 +9,10 @@ from typing import Final
 
 VERSION: Final[str] = "0.1.0"
 
+#: Where the span emitter exports to by default: the platform's OTLP/HTTP traces receiver for the team
+#: (`hajer._telemetry`). The whole route, OTLP's own `/v1/traces` included.
+OTEL_TRACES_PATH: Final[str] = "/api/teams/{team_id}/otel/v1/traces"
+
 #: Where `hajer eval --upload` posts an eval run (`hajer.evals._upload`). The payload is the SDK's own versioned
 #: schema (`hajer.evals._payload`); the platform resolves the repository the run belongs to from the run's own git
 #: context, so the route names the team and nothing else.

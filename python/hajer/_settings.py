@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -188,15 +189,36 @@ class HajerSettings(BaseModel):
     #: `hajer.attach()` called in code does not consult it — a developer who wrote the line has already said yes.
     attach: bool = False
 
-    # ── telemetry (`hajer.workflow` / `component` / `tool`) ─────────────────────────────────────
-    #: `HAJER_OTLP_ENDPOINT` — where the span emitter exports when the process has no OpenTelemetry SDK
-    #: provider of its own (`hajer/_telemetry.py`). Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`, the
-    #: standard variable, so an application already pointed at a collector needs nothing more. Absent, and
-    #: with no global provider, the emitter is a no-op. `hajer eval` sets it to the engine's loopback receiver.
+    # ── telemetry (`hajer.workflow` / `component` / `tool`, and every model call) ───────────────
+    #: `HAJER_TRACES_ENABLED` — **on by default.** With a key and a team, every span this process emits is
+    #: exported to the platform's OTLP receiver for the team (`hajer/_telemetry.py`). `0` keeps the spans on
+    #: the application's own OpenTelemetry provider, if it has one, and sends nothing to Hajer.
+    traces_enabled: bool = True
+    #: `HAJER_OTLP_ENDPOINT` — a collector of your own instead of the platform: the emitter exports to its
+    #: `/v1/traces`, with no credential unless `HAJER_OTLP_HEADERS` names one. Falls back to
+    #: `OTEL_EXPORTER_OTLP_ENDPOINT`, the standard variable. It wins over the platform target: a process that
+    #: named a collector meant it. `hajer eval` sets it to the engine's loopback receiver.
     otlp_endpoint: str | None = None
+    #: `HAJER_OTLP_HEADERS` — headers for the exporter, in OpenTelemetry's own `key=value,key2=value2`
+    #: spelling (values percent-decoded). Added to the platform's `Authorization` header, or the only
+    #: headers a `HAJER_OTLP_ENDPOINT` collector gets.
+    otlp_headers: str | None = None
+    #: `HAJER_SERVICE_NAME` — `service.name` on the resource of the provider the SDK builds when the
+    #: application has none; `OTEL_SERVICE_NAME`, the standard variable, is read when it is absent.
+    service_name: str | None = None
     #: `HAJER_TRACE_FLUSH_TIMEOUT_MS` — how long `flush()` waits for exported spans to leave. Two seconds:
     #: an eval provider flushes before it answers, so that the trace is there when the row is graded.
     trace_flush_timeout_ms: int = Field(default=2_000, gt=0)
+    #: `HAJER_TRACE_EXPORT_TIMEOUT_MS` — one export request's deadline, and so the most an exit flush waits
+    #: on an unreachable receiver. Five seconds: a batch is a few hundred kilobytes at most.
+    trace_export_timeout_ms: int = Field(default=5_000, gt=0)
+    #: `HAJER_TRACE_BATCH_DELAY_MS` — how long a partial batch waits before it is exported anyway.
+    trace_batch_delay_ms: int = Field(default=5_000, gt=0)
+    #: `HAJER_TRACE_QUEUE_MAX` — spans held for export before the newest are dropped; OpenTelemetry's own default.
+    trace_queue_max: int = Field(default=2_048, gt=0)
+    #: `HAJER_TRACE_BATCH_MAX` — spans in one export request. Below OpenTelemetry's 512 on purpose: a model
+    #: span may carry `HAJER_WRAPPED_CALL_MAX_BYTES` of content, so 128 keeps one request near 4 MB at worst.
+    trace_batch_max: int = Field(default=128, gt=0)
 
     # ── evals (`hajer eval`) ────────────────────────────────────────────────────────────────────
     #: `HAJER_CACHE_DIR` — where `hajer eval` installs the pinned engine (`engine/<lockfile digest>/`) and keeps
@@ -274,8 +296,15 @@ class HajerSettings(BaseModel):
             wrapped_calls_max=_positive_int(source, "HAJER_WRAPPED_CALLS_MAX", 32),
             redact_client=_boolean(source, "HAJER_REDACT_CLIENT", default=True),
             attach=_boolean(source, "HAJER_ATTACH", default=False),
+            traces_enabled=_boolean(source, "HAJER_TRACES_ENABLED", default=True),
             otlp_endpoint=_string(source, "HAJER_OTLP_ENDPOINT") or _string(source, "OTEL_EXPORTER_OTLP_ENDPOINT"),
+            otlp_headers=_string(source, "HAJER_OTLP_HEADERS"),
+            service_name=_string(source, "HAJER_SERVICE_NAME") or _string(source, "OTEL_SERVICE_NAME"),
             trace_flush_timeout_ms=_positive_int(source, "HAJER_TRACE_FLUSH_TIMEOUT_MS", 2_000),
+            trace_export_timeout_ms=_positive_int(source, "HAJER_TRACE_EXPORT_TIMEOUT_MS", 5_000),
+            trace_batch_delay_ms=_positive_int(source, "HAJER_TRACE_BATCH_DELAY_MS", 5_000),
+            trace_queue_max=_positive_int(source, "HAJER_TRACE_QUEUE_MAX", 2_048),
+            trace_batch_max=_positive_int(source, "HAJER_TRACE_BATCH_MAX", 128),
             cache_dir=_string(source, "HAJER_CACHE_DIR")
             or (
                 str(Path(xdg) / "hajer")
@@ -299,6 +328,22 @@ class HajerSettings(BaseModel):
             eval_hook_report=_string(source, "HAJER_EVAL_HOOK_REPORT"),
             disabled=_boolean(source, "HAJER_DISABLED", default=False),
         )
+
+    @property
+    def otlp_header_values(self) -> dict[str, str]:
+        """`HAJER_OTLP_HEADERS` as the headers it names: OpenTelemetry's `k=v,k2=v2`, values percent-decoded.
+
+        A pair with no `=` or an empty key is skipped rather than refused: a header is a hint to an exporter,
+        and the one place a malformed value could matter is `doctor`, which prints what was read.
+        """
+        if self.otlp_headers is None:
+            return {}
+        headers: dict[str, str] = {}
+        for pair in self.otlp_headers.split(","):
+            key, separator, value = pair.partition("=")
+            if separator and key.strip():
+                headers[key.strip()] = unquote(value.strip())
+        return headers
 
     @property
     def eval_obligation_ids(self) -> tuple[str, ...]:
@@ -325,8 +370,15 @@ VARIABLES: Final[tuple[tuple[str, str], ...]] = (
     ("wrapped_calls_max", "HAJER_WRAPPED_CALLS_MAX"),
     ("redact_client", "HAJER_REDACT_CLIENT"),
     ("attach", "HAJER_ATTACH"),
+    ("traces_enabled", "HAJER_TRACES_ENABLED"),
     ("otlp_endpoint", "HAJER_OTLP_ENDPOINT"),
+    ("otlp_headers", "HAJER_OTLP_HEADERS"),
+    ("service_name", "HAJER_SERVICE_NAME"),
     ("trace_flush_timeout_ms", "HAJER_TRACE_FLUSH_TIMEOUT_MS"),
+    ("trace_export_timeout_ms", "HAJER_TRACE_EXPORT_TIMEOUT_MS"),
+    ("trace_batch_delay_ms", "HAJER_TRACE_BATCH_DELAY_MS"),
+    ("trace_queue_max", "HAJER_TRACE_QUEUE_MAX"),
+    ("trace_batch_max", "HAJER_TRACE_BATCH_MAX"),
     ("cache_dir", "HAJER_CACHE_DIR"),
     ("eval_install_timeout_s", "HAJER_EVAL_INSTALL_TIMEOUT_S"),
     ("eval_runs_keep", "HAJER_EVAL_RUNS_KEEP"),
@@ -350,6 +402,7 @@ BOOLEAN_FIELDS: Final[tuple[str, ...]] = (
     "capture_content",
     "redact_client",
     "attach",
+    "traces_enabled",
     "disabled",
 )
 #: The one value that is never printed. A key in a terminal is a key in a scrollback buffer.

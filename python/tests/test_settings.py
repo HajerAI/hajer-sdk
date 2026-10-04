@@ -70,6 +70,13 @@ class TestFromEnv:
                 "HAJER_BODY_MAX_BYTES": "1024",
                 "HAJER_CAPTURE_CONTENT": "yes",
                 "HAJER_WRAPPED_CALLS_MAX": "4",
+                "HAJER_TRACES_ENABLED": "no",
+                "HAJER_OTLP_HEADERS": "x-team=team%201,x-empty=",
+                "HAJER_SERVICE_NAME": "support-api",
+                "HAJER_TRACE_EXPORT_TIMEOUT_MS": "750",
+                "HAJER_TRACE_BATCH_DELAY_MS": "100",
+                "HAJER_TRACE_QUEUE_MAX": "16",
+                "HAJER_TRACE_BATCH_MAX": "8",
                 "HAJER_DISABLED": "off",
             }
         )
@@ -82,8 +89,33 @@ class TestFromEnv:
         assert settings.body_max_bytes == 1024
         assert settings.capture_content is True
         assert settings.wrapped_calls_max == 4
+        assert settings.traces_enabled is False
+        assert settings.otlp_header_values == {"x-team": "team 1", "x-empty": ""}
+        assert settings.service_name == "support-api"
+        assert (settings.trace_export_timeout_ms, settings.trace_batch_delay_ms) == (750, 100)
+        assert (settings.trace_queue_max, settings.trace_batch_max) == (16, 8)
         assert settings.disabled is False
         assert settings.inert is False
+
+    def test_the_standard_otel_variables_are_fallbacks(self) -> None:
+        settings = hajer.HajerSettings.from_env(
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318", "OTEL_SERVICE_NAME": "svc"}
+        )
+        assert (settings.otlp_endpoint, settings.service_name) == ("http://collector:4318", "svc")
+        own = hajer.HajerSettings.from_env(
+            {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318",
+                "HAJER_OTLP_ENDPOINT": "http://mine:4318",
+                "OTEL_SERVICE_NAME": "svc",
+                "HAJER_SERVICE_NAME": "mine",
+            }
+        )
+        assert (own.otlp_endpoint, own.service_name) == ("http://mine:4318", "mine")
+
+    def test_malformed_header_pairs_are_skipped_not_refused(self) -> None:
+        settings = hajer.HajerSettings(otlp_headers="no-equals, =empty-key ,ok=1")
+        assert settings.otlp_header_values == {"ok": "1"}
+        assert hajer.HajerSettings().otlp_header_values == {}
 
     def test_empty_environment_has_documented_defaults_and_is_inert(self) -> None:
         settings = hajer.HajerSettings.from_env({})
@@ -91,6 +123,10 @@ class TestFromEnv:
         assert settings.eval_upload_attempts == 3
         assert settings.eval_upload_backoff_initial_ms == 200
         assert settings.eval_upload_backoff_max_ms == 30_000
+        assert settings.traces_enabled is True
+        assert (settings.otlp_endpoint, settings.otlp_headers, settings.service_name) == (None, None, None)
+        assert (settings.trace_export_timeout_ms, settings.trace_batch_delay_ms) == (5_000, 5_000)
+        assert (settings.trace_queue_max, settings.trace_batch_max) == (2_048, 128)
         assert settings.body_max_bytes == 65_536
         assert settings.capture_content is True
         assert settings.wrapped_calls_max == 32

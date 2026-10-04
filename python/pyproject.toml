@@ -231,9 +231,11 @@ ignore_names = [
     # `isinstance` reads `__class__` and the subscript syntax calls `__getitem__`; neither is a name
     # any line of ours writes, which is what a protocol name is.
     "__class__",
-    # OpenTelemetry's `SpanProcessor` protocol: the `TracerProvider` calls these on every span and flush.
+    # OpenTelemetry's `SpanProcessor` and `SpanExporter` protocols: the `TracerProvider` and the batch
+    # processor call these on every span, flush and batch.
     "on_start",
     "force_flush",
+    "export",
     # `_redact._RulesSpec.version` is a contract field: pydantic validates it is the literal `1` and nothing
     # reads it afterwards, which is the whole point of a version pin and exactly what vulture cannot see.
     "version",

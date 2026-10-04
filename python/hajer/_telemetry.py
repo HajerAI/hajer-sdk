@@ -12,9 +12,14 @@ tool inside both carries both — across `await`, and into a thread that copied 
 does. A workflow span also enters `hajer.scope(workflow=…)`, so the model calls `wrap` records inside it group
 under the same identity the span carries; one declaration, two records that agree.
 
-**Nothing here imports OpenTelemetry at module import.** The OTel half is `hajer._telemetry_otel`, loaded through
-`importlib` on first use; without `hajer[otel]` every span still runs the code it wraps, still keeps the id stack,
-still enters the scope, emits nothing, and says so once on the `hajer` logger. **Nothing here raises into the
+**Where the spans go** is decided here, OTel-free, by `export_target`: a collector the process named
+(`HAJER_OTLP_ENDPOINT`), else the platform's receiver for the team when there is a key, else nowhere. The OTel half
+(`hajer._telemetry_otel`) adds an exporter for that target to the provider in use — the application's own, so it
+keeps its exporters, or an isolated one the SDK builds and never installs globally.
+
+**Nothing here imports OpenTelemetry at module import.** The OTel half is loaded through `importlib` on first use;
+without `hajer[otel]` every span still runs the code it wraps, still keeps the id stack, still enters the scope,
+emits nothing, and says so once on the `hajer` logger. **Nothing here raises into the
 application**: a provider that cannot start a span, an exporter that cannot flush, a document that cannot be
 encoded — each degrades to "no span" or "no attribute", because an instrumentation path that raised would turn a
 declaration about a workflow into the reason the workflow failed.
@@ -41,6 +46,7 @@ from typing import Final, Literal, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
 from hajer._errors import HajerConfigError
 from hajer._json import JsonObject
+from hajer._paths import OTEL_TRACES_PATH
 from hajer._redact import build_policy, redact_document
 from hajer._settings import HajerSettings
 from hajer._wrap import Operation, fitted, scope
@@ -59,9 +65,12 @@ Kind: TypeAlias = Literal["workflow", "component", "tool"]
 EXECUTE_TOOL: Final[str] = "execute_tool"
 #: What the `hajer` logger says, once per configuration, when the OTel half cannot be imported.
 OTEL_MISSING: Final[str] = (
-    "hajer.workflow / component / tool emit no spans: the OpenTelemetry SDK is not installed. "
+    "hajer emits no spans: the OpenTelemetry SDK is not installed. "
     "Install the `otel` extra (`pip install 'hajer[otel]'`) to export them."
 )
+#: OTLP/HTTP's traces path, appended to a collector endpoint (an endpoint, not a traces URL — the same
+#: convention `OTEL_EXPORTER_OTLP_ENDPOINT` follows). The platform's route carries it already.
+OTLP_TRACES_SUFFIX: Final[str] = "/v1/traces"
 #: What the `hajer` logger says when `HajerSettings.from_env()` refuses the environment: the emitter runs on defaults.
 SETTINGS_INVALID: Final[str] = (
     "hajer telemetry is running on default settings because the environment could not be read: {error}"
@@ -71,6 +80,36 @@ _NO_ERROR: Final[tuple[None, None, None]] = (None, None, None)
 #: The catalog's default policy, built once: tool arguments are redacted under the same rules as every other
 #: document the SDK sends, and `build_policy()` with no extras cannot refuse.
 _DEFAULT_POLICY: Final = build_policy()
+
+
+# ── where the spans go ──────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class ExportTarget:
+    """One place spans are exported to: the traces URL, and the headers every request carries."""
+
+    url: str
+    headers: dict[str, str]
+    #: True when the target is the platform and the key rides along; False for a collector of the process's own.
+    authenticated: bool
+
+
+def export_target(settings: HajerSettings) -> ExportTarget | None:
+    """Where this process's spans leave for, or `None` when they leave for nowhere.
+
+    A collector the process named wins: `HAJER_OTLP_ENDPOINT` (or the standard variable) is an operator saying
+    where their spans go, and `hajer eval` relies on it to reach the engine's receiver without a key. Otherwise the
+    platform, for the team the key names, when there is a key, the process is not disabled and
+    `HAJER_TRACES_ENABLED` is on. Headers from `HAJER_OTLP_HEADERS` ride on either.
+    """
+    extra = settings.otlp_header_values
+    if settings.otlp_endpoint is not None:
+        return ExportTarget(settings.otlp_endpoint.rstrip("/") + OTLP_TRACES_SUFFIX, extra, authenticated=False)
+    if settings.inert or not settings.traces_enabled or settings.api_key is None or settings.team_id is None:
+        return None
+    url = settings.base_url.rstrip("/") + OTEL_TRACES_PATH.format(team_id=settings.team_id)
+    return ExportTarget(url, {**extra, "Authorization": f"Bearer {settings.api_key}"}, authenticated=True)
 
 
 # ── the two seams the OTel half fills ───────────────────────────────────────────────────────────
@@ -87,6 +126,7 @@ class Backend(Protocol):
 
     def start(self, name: str, attributes: Attributes, *, traceparent: str | None) -> SpanHandle: ...
     def flush(self, timeout_ms: int) -> bool: ...
+    def shutdown(self) -> None: ...
 
 
 # ── process-wide configuration ──────────────────────────────────────────────────────────────────
@@ -118,15 +158,23 @@ def configure(settings: HajerSettings | None = None, *, tracer_provider: object 
     """Choose the settings and the tracer provider every later span uses; `None` means read the environment lazily.
 
     The explicit override and the test seam in one: an application with its own OpenTelemetry setup passes the
-    provider it wants the spans on, a test passes an isolated SDK provider with an in-memory exporter, and
-    `configure()` with nothing resets to the defaults. Takes effect for the next span; an open span is unaffected.
+    provider it wants the spans on (the platform's exporter is added to it, beside the application's own), a test
+    passes an isolated SDK provider with an in-memory exporter, and `configure()` with nothing resets to the
+    defaults. Takes effect for the next span; an open span is unaffected. The previous backend is shut down, so a
+    provider the SDK built for the previous configuration stops exporting.
     """
     with _CONFIGURATION.lock:
+        previous = _CONFIGURATION.backend
         _CONFIGURATION.settings = settings
         _CONFIGURATION.tracer_provider = tracer_provider
         _CONFIGURATION.backend = None
         _CONFIGURATION.backend_loaded = False
         _CONFIGURATION.warned = False
+    if previous is not None:
+        try:
+            previous.shutdown()
+        except Exception:  # noqa: BLE001, S110 - a backend that cannot stop is not the caller's problem
+            pass
 
 
 def _settings() -> HajerSettings:
@@ -194,9 +242,17 @@ def flush(timeout_ms: int | None = None) -> bool:
 
 
 def _flush_at_exit() -> None:
-    """The `atexit` hook: whatever is still queued gets its one chance to leave. Never raises, at exit least of all."""
+    """The `atexit` hook: whatever is still queued gets its one chance to leave, then the SDK's own exporter stops.
+
+    Never raises, at exit least of all. The shutdown is what ends the batch processor's thread for a provider the
+    SDK built; an application's own provider is left to its own shutdown.
+    """
     try:
         flush()
+        with _CONFIGURATION.lock:
+            backend = _CONFIGURATION.backend
+        if backend is not None:
+            backend.shutdown()
     except Exception:  # noqa: BLE001, S110 - nothing may raise out of an atexit hook
         pass
 

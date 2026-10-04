@@ -18,7 +18,6 @@ from tests.fakes import FakeOpenAI
 
 pytest.importorskip("opentelemetry.sdk")
 
-from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -354,38 +353,6 @@ def test_a_flush_that_raises_is_reported_false() -> None:
         assert _telemetry.flush() is False
     finally:
         _telemetry.configure(None)
-
-
-def test_the_provider_is_chosen_by_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit first; then the application's own SDK provider; then an isolated exporter, never made global; else no-op."""
-    from hajer import _telemetry_otel  # noqa: PLC0415 - the OTel half is imported lazily by design
-
-    own = TracerProvider()
-    exporter = InMemorySpanExporter()
-    own.add_span_processor(SimpleSpanProcessor(exporter))
-    try:
-        explicit = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1"), own)
-        assert explicit.provider is own, "an explicit provider beats the endpoint"
-
-        monkeypatch.setattr(trace, "get_tracer_provider", lambda: own)
-        inherited = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1"), None)
-        assert inherited.provider is own, "the application's SDK provider beats the endpoint"
-        inherited.start("workflow x", {"hajer.workflow.id": "x"}, traceparent=None).end(None)
-        assert [span.name for span in cast(Sequence[ReadableSpan], exporter.get_finished_spans())] == ["workflow x"]
-
-        monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
-        isolated = _telemetry_otel.build(hajer.HajerSettings(otlp_endpoint="http://127.0.0.1:1/"), None)
-        assert isinstance(isolated.provider, TracerProvider)
-        assert isolated.provider is not own
-        assert not isinstance(trace.get_tracer_provider(), TracerProvider), "never installed as the global provider"
-        isolated.provider.shutdown()
-
-        silent = _telemetry_otel.build(hajer.HajerSettings(), None)
-        assert silent.provider is None
-        assert silent.flush(10) is False
-        silent.start("workflow x", {}, traceparent=None).end(None)
-    finally:
-        own.shutdown()
 
 
 def test_the_public_names_are_the_module_ones() -> None:

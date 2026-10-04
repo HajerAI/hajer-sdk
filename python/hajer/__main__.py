@@ -12,15 +12,17 @@ and every flag it does not know is handed to the engine, so `hajer eval --help` 
 `hajer eval --engine-help` the engine's.
 
 `doctor` is the first command to run when nothing is arriving. It answers the questions that account for
-most of it — is the SDK the version you think it is, is `HAJER_BASE_URL` answering at all, is each setting
-coming from the environment or from a default, would this process be inert, and where would its spans go —
-and it answers them without sending a span: its one request is a keyless GET of the liveness probe, and a
-401 from that is a perfectly good answer (something is listening; the key is a separate question).
+most of it — is the SDK the version you think it is, is the OpenTelemetry SDK installed, where would this
+process's spans go, is `HAJER_BASE_URL` answering at all, is each setting coming from the environment or from a
+default, and would this process be inert — and it answers them without sending a span: its one request is a
+keyless GET of the liveness probe, and a 401 from that is a perfectly good answer (something is listening; the
+key is a separate question).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import importlib.util
 import json
 import sys
@@ -33,6 +35,7 @@ from hajer import _bootstrap
 from hajer._json import JsonObject, JsonValue
 from hajer._paths import HEALTH_PATH, VERSION
 from hajer._settings import HajerSettings, SettingSource, settings_sources
+from hajer._telemetry import export_target
 from hajer._transport import probe
 from hajer.evals import _cli
 from hajer.evals._engine import engine_status
@@ -42,6 +45,9 @@ from hajer.evals._engine import engine_status
 #: to answer `doctor`, and saying "absent" is the answer an operator needs.
 _CATALOG_MODULE: Final[str] = "hajer._rules"
 _CATALOG_IDS: Final[tuple[str, ...]] = ("CATALOG_ID", "CATALOG_DIGEST", "CATALOG_VERSION")
+#: The distribution the `otel` extra installs, and what `doctor` says when it is missing.
+_OTEL_DISTRIBUTION: Final[str] = "opentelemetry-sdk"
+OTEL_ABSENT: Final[str] = "missing: pip install 'hajer[otel]' to export spans"
 
 
 def _attach_path() -> int:
@@ -60,6 +66,25 @@ def redaction_catalog() -> str:
         if isinstance(found, str) and found:
             return found
     return f"present at {_CATALOG_MODULE}, which publishes no catalog id"
+
+
+def otel_status() -> str:
+    """The OpenTelemetry SDK's version when the `otel` extra is installed, else what to install."""
+    try:
+        return f"opentelemetry-sdk {importlib.metadata.version(_OTEL_DISTRIBUTION)}"
+    except importlib.metadata.PackageNotFoundError:
+        return OTEL_ABSENT
+
+
+def traces_status(settings: HajerSettings) -> str:
+    """Where this process's spans would go, or why they would go nowhere — in the operator's own terms."""
+    target = export_target(settings)
+    if target is not None:
+        return f"{target.url} (auth: {'bearer' if target.authenticated else 'none'})"
+    because = _why_inert(settings)
+    if because is not None:
+        return f"nowhere: {because}"
+    return "nowhere: HAJER_TRACES_ENABLED is off"
 
 
 def _why_inert(settings: HajerSettings) -> str | None:
@@ -82,6 +107,8 @@ def _report(settings: HajerSettings, rows: tuple[SettingSource, ...], status: in
     return {
         "version": VERSION,
         "redactionCatalog": redaction_catalog(),
+        "otel": otel_status(),
+        "traces": traces_status(settings),
         "baseUrl": settings.base_url,
         "baseUrlPath": HEALTH_PATH,
         "baseUrlAnswers": status is not None,
@@ -95,7 +122,7 @@ def _report(settings: HajerSettings, rows: tuple[SettingSource, ...], status: in
 def doctor(*, as_json: bool, settings: HajerSettings, transport: httpx.BaseTransport | None = None) -> int:
     """Print what this process's SDK is configured to do, and whether it could do it."""
     rows = settings_sources(settings)
-    status = probe(settings.base_url, HEALTH_PATH, timeout_ms=settings.trace_flush_timeout_ms, transport=transport)
+    status = probe(settings.base_url, HEALTH_PATH, timeout_ms=settings.trace_export_timeout_ms, transport=transport)
     report = _report(settings, rows, status)
     report["evals"] = engine_status(settings)
     if as_json:
@@ -104,6 +131,8 @@ def doctor(*, as_json: bool, settings: HajerSettings, transport: httpx.BaseTrans
     reached = f"{status}" if status is not None else "no answer"
     lines = [
         f"hajer {VERSION}",
+        f"otel            {otel_status()}",
+        f"traces          {traces_status(settings)}",
         f"redaction       {redaction_catalog()}",
         f"base url        {settings.base_url}{HEALTH_PATH} -> {reached} (keyless GET)",
         f"inert           {'yes' if settings.inert else 'no'}",
