@@ -110,7 +110,6 @@ class TestAgainstTodaysSnapshot:
             "/api/teams/{team_id}/observe",
             "/api/teams/{team_id}/observations",
             "/api/teams/{team_id}/observations/{observation_id}/assessment",
-            "/api/teams/{team_id}/projects/{project_id}/suite-runs/execution-inputs",
         ]
 
     def test_the_tails_row_is_generated_from_the_snapshot_and_not_written_here(self) -> None:

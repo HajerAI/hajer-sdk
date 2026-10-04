@@ -62,13 +62,6 @@ class BodyOverBoundError(HajerError):
         self.limit = limit
 
 
-class SpendRefusedError(ValueError):
-    """CI-only pre-dispatch refusal: silence could spend without consent. The CI child turns it into unavailable.
-
-    This is never raised by wrap(), verify() or observe() in a customer's application request path.
-    """
-
-
 class AssessmentUnavailableError(HajerError):
     """Raised instead of returning `unavailable`, only when the caller asked for it."""
 

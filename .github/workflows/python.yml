@@ -8,9 +8,9 @@ name: python
 on:
   push:
     branches: [main]
-    paths: ["python/**", "contract/**", "action/**", ".github/workflows/python.yml"]
+    paths: ["python/**", "contract/**", ".github/workflows/python.yml"]
   pull_request:
-    paths: ["python/**", "contract/**", "action/**", ".github/workflows/python.yml"]
+    paths: ["python/**", "contract/**", ".github/workflows/python.yml"]
 
 concurrency:
   group: python-${{ github.ref }}
@@ -24,7 +24,7 @@ jobs:
     name: just ci (${{ matrix.python }})
     runs-on: ubuntu-latest
     # uv takes the runner's own interpreter when it matches (3.12 is Ubuntu 24.04's `python3.12`, Debian-patched)
-    # and downloads the others, so the matrix also covers a distribution-patched `sysconfig` (tests/test_child_boot.py).
+    # and downloads the others, so the matrix also covers a distribution-patched `sysconfig`.
     strategy:
       fail-fast: false
       matrix:

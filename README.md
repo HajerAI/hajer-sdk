@@ -1,18 +1,16 @@
-# Hajer SDKs
+# Hajer SDK
 
 At the point where a model output crosses into a side effect — an HTTP response, an email, a database
 write — your code hands [Hajer](https://hajer.ai) the request, the output and the evidence it chose.
 Hajer applies a named, versioned **verifier** and returns an **assessment**. Your application decides
 what to do with it.
 
-This repository holds the open-source clients for that call.
+This repository holds the open-source client for that call.
 
 | Directory | Package | Status |
 |---|---|---|
 | [`python/`](python/) | [`hajer`](https://pypi.org/project/hajer/) on PyPI | 0.x |
-| [`typescript/`](typescript/) | `@hajer/sdk` | not yet published |
-| [`action/`](action/) | GitHub Action: run Hajer suites in your CI | `uses: HajerAI/hajer-sdk/action@<sha>` |
-| [`contract/`](contract/) | The platform API snapshot and shared test vectors the SDKs are built against | copied from the platform; do not edit |
+| [`contract/`](contract/) | The platform API snapshot and shared test vectors the SDK is built against | copied from the platform; do not edit |
 
 ## Python in thirty seconds
 
@@ -42,15 +40,14 @@ The [Python README](python/README.md) has the rest.
 
 ## Development
 
-Each package is self-contained, with its own tooling and lockfile. Run commands from inside it:
+The package is self-contained, with its own tooling and lockfile. Run commands from inside it:
 
 ```bash
 cd python && just sync && just check && just test
-cd typescript && npm ci && just ci
 ```
 
-`python/hajer/_wire.py` and `typescript/src/wire.ts` are generated from `contract/openapi.json`
-(`just contract-refresh` / `just generate-wire`) and never edited by hand.
+`python/hajer/_wire.py` is generated from `contract/openapi.json` (`just contract-refresh`) and never
+edited by hand.
 
 Releases are tagged per package: `python-v0.2.0` publishes `hajer` 0.2.0 to PyPI
 (`.github/workflows/release-python.yml`).

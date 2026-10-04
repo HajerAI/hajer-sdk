@@ -10,22 +10,7 @@ from pathlib import Path
 import pytest
 
 import hajer
-from hajer._settings import BOOLEAN_FIELDS, DEFAULT_BASE_URL, VARIABLES, ci_execution_environment, settings_sources
-
-
-def test_replay_configuration_cannot_override_budget_or_leak_hajer_key(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("HAJER_API_KEY", "synthetic-team-secret")
-    settings = hajer.HajerSettings(ci_budget_microusd=100, ci_budget_file=str(tmp_path / "budget.sqlite"))
-    declared = {"DATABASE_URL": "unused", "HAJER_CI_BUDGET_MICROUSD": "999999", "HAJER_API_KEY": "bad"}
-    replay = ci_execution_environment(declared, live=False, settings=settings)
-    assert replay["DATABASE_URL"] == "unused"
-    assert replay["HAJER_CI_BUDGET_MICROUSD"] == "100"
-    assert "HAJER_API_KEY" not in replay
-    assert replay["OPENAI_API_KEY"] == "hajer-verify-adapters-no-key"
-    assert "OPENAI_API_KEY" not in ci_execution_environment(declared, live=True, settings=settings)
+from hajer._settings import BOOLEAN_FIELDS, DEFAULT_BASE_URL, VARIABLES, settings_sources
 
 
 class TestFromEnv:
@@ -47,7 +32,7 @@ class TestFromEnv:
 
     @pytest.mark.parametrize(
         "variable",
-        ["HAJER_DEADLINE_MS_DEFAULT", "HAJER_CI_BUDGET_MICROUSD", "HAJER_CAPTURE_CONTENT"],
+        ["HAJER_DEADLINE_MS_DEFAULT", "HAJER_OBSERVE_BATCH_MAX", "HAJER_CAPTURE_CONTENT"],
     )
     def test_invalid_values_never_enter_error_messages_attributes_or_chains(self, variable: str) -> None:
         canary = "sk-synthetic-canary person@example.test"

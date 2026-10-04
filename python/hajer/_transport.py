@@ -125,20 +125,6 @@ class SyncTransport:
     def post(self, path: str, body: bytes, *, idempotency_key: str, timeout_s: float) -> httpx.Response:
         return self._client.post(path, content=body, headers={"Idempotency-Key": idempotency_key}, timeout=timeout_s)
 
-    def post_bounded(
-        self, path: str, body: bytes, *, idempotency_key: str, timeout_s: float, max_bytes: int
-    ) -> httpx.Response:
-        """Read a private CI response within its byte ceiling, closing the stream on every refusal."""
-        with self._client.stream(
-            "POST", path, content=body, headers={"Idempotency-Key": idempotency_key}, timeout=timeout_s
-        ) as response:
-            content = bytearray()
-            for chunk in response.iter_bytes():
-                if len(content) + len(chunk) > max_bytes:
-                    raise BodyOverBoundError(len(content) + len(chunk), max_bytes)
-                content.extend(chunk)
-            return httpx.Response(response.status_code, headers=response.headers, content=bytes(content))
-
     def get(self, path: str, *, timeout_s: float, params: Mapping[str, str] | None = None) -> httpx.Response:
         return self._client.get(path, timeout=timeout_s, params=dict(params) if params else None)
 

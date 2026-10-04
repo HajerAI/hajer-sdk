@@ -1,10 +1,10 @@
-"""The replay child's own marker ids travel exactly as minted; anything else under `hajerReplay` is redacted as today.
+"""Hajer's own replay marker ids travel exactly as minted; anything else under `hajerReplay` is redacted as today.
 
 About one sha256-hex marker id in a few hundred holds a Luhn-valid digit run. The client pass reported it as a phantom
 CARD and sent the id mangled, so the capture no longer named its run, plan or case. A
 string at exactly `evidence.hajerReplay.<runId | planId | caseId>` that whole matches the grammar of the id Hajer
-mints there is now left alone (`_replay_marker.py`, the service's grammars, compared by the platform's test). Asserted on
-the wire, through the same `verify` the replay child makes (`replay/_case.py`).
+mints there is left alone (`_replay_marker.py`, the service's grammars, compared by the platform's test). Asserted on
+the wire, through the same `verify` a replayed case makes.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from hajer._json import JsonObject, JsonValue
 from hajer._redact import build_policy, redact_submission
 from hajer._replay_marker import REPLAY_MARKER
 from hajer._settings import HajerSettings
-from hajer.replay._case import replay_marker
 from tests.conftest import Recorder, assessment_json, responds
 
 CARD = "4111111111111111"  # Luhn-valid
@@ -43,13 +42,12 @@ def classes(body: JsonObject) -> set[str]:
     return {str(cast("JsonObject", row)["category"]) for row in cast("list[JsonValue]", report["countsByClass"])}
 
 
-def test_the_replay_childs_marker_ids_travel_exactly_as_minted(settings: HajerSettings) -> None:
+def test_the_minted_marker_ids_travel_exactly_as_minted(settings: HajerSettings) -> None:
     """The diagnoser's regression, client side: no phantom CARD, no mangled join id."""
-    spec: dict[str, JsonValue] = {"runId": RUN_ID, "planId": PLAN_ID, "caseId": CASE_ID, "attempt": 1}
-    marker = cast("dict[str, JsonValue]", replay_marker(spec)[REPLAY_MARKER])
+    marker: dict[str, JsonValue] = {"runId": RUN_ID, "planId": PLAN_ID, "caseId": CASE_ID, "attempt": 1}
     body = sent(settings, marker)
     evidence = cast("JsonObject", body["evidence"])
-    assert evidence[REPLAY_MARKER] == spec
+    assert evidence[REPLAY_MARKER] == marker
     assert "clientRedaction" not in body
 
 

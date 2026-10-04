@@ -1,13 +1,12 @@
-"""The shared redaction vectors, read by this client and by the TypeScript one.
+"""The shared redaction vectors, vendored from the platform and read by this client.
 
 `contract/redaction-vectors.json` holds thirty-one positives and fifteen negatives with the class
-each is expected to report and the exact text it becomes. `typescript/test/redact.test.ts` reads
-the same file and asserts the same two things, so the two clients cannot disagree about what a
-submission contains without a red test on both sides — which is the whole claim behind
-the TypeScript SDK sharing this catalog rather than reimplementing it.
+each is expected to report and the exact text it becomes. The platform generates the file from its own
+redaction catalog, so the client cannot disagree with the service about what a submission contains
+without a red test here.
 
 The two provider-key classes are deliberately not in the file: a data file carrying a literal
-provider-key prefix trips every credential scan this repository runs over its artifacts, and each
+provider-key prefix trips every credential scan this repository runs over its artifacts, and the
 client asserts those two against its own inline sample instead (`test_redact.py`).
 """
 

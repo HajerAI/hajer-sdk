@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared case-key vectors. The Hajer platform and both SDKs must derive the same caseKey for every vector; a changed caseKey is a new scheme, never an edit.",
+  "$comment": "Shared case-key vectors. The Hajer platform and the SDK must derive the same caseKey for every vector; a changed caseKey is a new scheme, never an edit.",
   "scheme": "ck1",
   "vectors": [
     {

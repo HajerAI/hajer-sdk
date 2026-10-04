@@ -17,7 +17,7 @@ from hajer._json import JsonValue
 
 SNAPSHOT_DIGEST: Final[str] = "sha256:43d82e5ec3d54b7c90deacb2d470cd41aaf3c9c9802aee63d3f311cf86dc38d2"
 SNAPSHOT_PATH: Final[str] = "contract/openapi.json"
-OPERATIONS: Final[tuple[tuple[str, str], ...]] = (("post", "/api/teams/{team_id}/verify"), ("post", "/api/teams/{team_id}/observe"), ("get", "/api/teams/{team_id}/observations"), ("get", "/api/teams/{team_id}/observations/{observation_id}/assessment"), ("post", "/api/teams/{team_id}/projects/{project_id}/suite-runs/execution-inputs"),)
+OPERATIONS: Final[tuple[tuple[str, str], ...]] = (("post", "/api/teams/{team_id}/verify"), ("post", "/api/teams/{team_id}/observe"), ("get", "/api/teams/{team_id}/observations"), ("get", "/api/teams/{team_id}/observations/{observation_id}/assessment"),)
 WIRE_READY: Final[bool] = True
 
 
@@ -165,27 +165,6 @@ class PolledAssessmentOut(BaseModel):
     status: VerificationStatus | None = None
     unavailable_reason: UnavailableReason | None = Field(None, alias="unavailableReason")
     verifier: str | None = None
-
-
-class PrivateSuiteInputsIn(BaseModel):
-    """Generated from components.schemas.PrivateSuiteInputsIn."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
-
-    revision: str
-    suite_digest: str = Field(alias="suiteDigest")
-    suite_id: str = Field(alias="suiteId")
-    suite_version: int = Field(alias="suiteVersion")
-
-
-class PrivateSuiteInputsOut(BaseModel):
-    """Generated from components.schemas.PrivateSuiteInputsOut."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
-
-    execution_document: str = Field(alias="executionDocument")
-    revision: str
-    unavailable_case_ids: tuple[str, ...] = Field(alias="unavailableCaseIds")
 
 
 class RedactionCountIn(BaseModel):
@@ -342,10 +321,6 @@ ObserveAcceptedOut.model_rebuild()
 ObserveIn.model_rebuild()
 
 PolledAssessmentOut.model_rebuild()
-
-PrivateSuiteInputsIn.model_rebuild()
-
-PrivateSuiteInputsOut.model_rebuild()
 
 RedactionCountIn.model_rebuild()
 

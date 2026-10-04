@@ -2,8 +2,7 @@
 
 The team decides which environments' calls may become test inputs, so the tag has to be on the wire from the first
 call. It is lower-case, `^[a-z0-9][a-z0-9-]{0,63}$`; a value outside that is dropped and `doctor` says so, because a
-tag is a hint and a hint never costs the call it rides on (the SDK does not raise into application code). A
-replay `verify` is CI traffic and says `ci` whatever the shell around it was tagged.
+tag is a hint and a hint never costs the call it rides on (the SDK does not raise into application code).
 """
 
 from __future__ import annotations
@@ -14,23 +13,11 @@ from pydantic import JsonValue
 import hajer
 from hajer import _wire
 from hajer.__main__ import doctor
-from hajer._settings import CI_ENVIRONMENT, HajerSettings, settings_sources
-from hajer.replay import _case
+from hajer._settings import HajerSettings, settings_sources
 from tests.conftest import Recorder, assessment_json, responds
 from tests.test_cli import _answers, _rows  # pyright: ignore[reportPrivateUsage]
 
 _CREDENTIALS = {"HAJER_API_KEY": "key-for-tests", "HAJER_TEAM_ID": "team-1", "HAJER_BASE_URL": "https://hajer.test"}
-_SPEC: dict[str, JsonValue] = {
-    "runId": "replay-run-1",
-    "planId": "plan-1",
-    "caseId": "c1",
-    "attempt": 1,
-    "workflowId": "classify",
-    "revisionLabel": "candidate",
-    "input": {"text": "hello"},
-    "adapter": {"verifier": "classify@2"},
-    "hajer": {"baseUrl": "https://hajer.test", "teamId": "team-1"},
-}
 
 
 def _observed(settings: HajerSettings) -> dict[str, JsonValue]:
@@ -100,20 +87,3 @@ class TestDoctor:
         assert (rows["HAJER_ENVIRONMENT"].source, rows["HAJER_ENVIRONMENT"].value) == ("env", "staging")
         absent = {row.variable: row for row in settings_sources(HajerSettings.from_env({}), {})}
         assert (absent["HAJER_ENVIRONMENT"].source, absent["HAJER_ENVIRONMENT"].value) == ("default", "absent")
-
-
-def test_a_replay_verify_is_tagged_ci(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The replay child builds its own settings; the shell's `HAJER_ENVIRONMENT` never reaches them."""
-    monkeypatch.setenv("HAJER_ENVIRONMENT", "production")
-    recorder = Recorder(responds(assessment_json(observationId="ing-" + "c3" * 16)))
-
-    def recording(*, settings: HajerSettings) -> hajer.Hajer:
-        return hajer.Hajer(settings=settings, transport=recorder.transport())
-
-    monkeypatch.setattr(_case, "Hajer", recording)
-
-    _, _, sent = _case._verify(_SPEC, {"label": "POSITIVE"}, "key", [])  # pyright: ignore[reportPrivateUsage]
-
-    assert sent is True
-    (body,) = recorder.bodies()
-    assert body["environment"] == CI_ENVIRONMENT == "ci"

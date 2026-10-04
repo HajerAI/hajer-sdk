@@ -167,7 +167,7 @@ The keyword is `case_key=`, the wire field is `caseKey` and the stored column is
 layer, and the keyword is the one you type.
 
 Pass nothing and the SDK derives one: `ck1_<sha256>` over the canonical JSON of the request, taken
-**before** client-side redaction rewrites anything. The normalisation is implemented in `hajer/_case_key.py` (and `typescript/src/caseKey.ts`) and pinned by
+**before** client-side redaction rewrites anything. The normalisation is implemented in `hajer/_case_key.py` and pinned by
 the shared vectors in `contract/case-key-vectors.json`, which the server's implementation also reads. The row records where the key came from, and the three sources are not
 equally strong:
 
@@ -443,8 +443,8 @@ is the difference between a card number that was exposed and one that never left
 
 The catalog is `redaction-rules@6`, generated from the platform's committed rule set into
 `hajer/_rules.py`, so a stored observation's `clientRedaction` report names a rule set that really was in
-force. `contract/redaction-vectors.json` holds the shared positive and negative cases the Python and
-TypeScript clients are both tested against. `python -m hajer doctor` prints the catalog id this build
+force. `contract/redaction-vectors.json` holds the shared positive and negative cases the client is
+tested against. `python -m hajer doctor` prints the catalog id this build
 carries.
 
 **The placeholder is fixed.** A match becomes `[redacted:CARD]`, `[redacted:IBAN]`, `[redacted:EMAIL]` —
@@ -591,8 +591,7 @@ in rather than guess. If you need a reversible installation, use `hajer.instrume
 ## The command line
 
 `python -m hajer` has no configuration file. Its subcommands are `attach-path` (above), `doctor`, `tail`
-and `proxy`, plus `upload-results` and `verify-adapters`, which belong to CI suites and are described in
-[ci.md](ci.md).
+and `proxy`.
 
 ### `python -m hajer doctor`
 
@@ -758,8 +757,7 @@ options:
 
 Every bound is a `HajerSettings` field with an environment variable. Nothing in this package spells a
 limit as a literal anywhere else. `HajerSettings.from_env()` is the only place the process environment is
-read; you can also construct `HajerSettings(...)` yourself and pass it to the client. The settings used
-only by CI suites are in [ci.md](ci.md#settings).
+read; you can also construct `HajerSettings(...)` yourself and pass it to the client.
 
 | Variable | Default | What it is, and when to change it |
 | --- | --- | --- |
