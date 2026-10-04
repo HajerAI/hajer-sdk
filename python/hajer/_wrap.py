@@ -463,6 +463,7 @@ def record_http_exchange(
     call = _begin(provider, api, dict(request), settings, streams=streamed)
     call.stream_complete = complete if streamed else None
     call.duration_ms = (time.monotonic_ns() - started_ns) // _NS_PER_MS
+    call.started_ns -= call.duration_ms * _NS_PER_MS  # begun when the request left, not when its body ended
     if error is not None:
         _fail(call, error, started_ns)
     elif status >= _HTTP_FAILURE:
@@ -482,6 +483,7 @@ def record_http_exchange(
         content["responseBody"] = body.decode("utf-8", errors="replace")
         call.content = content
     _record(call, settings)
+    _opened(call)
     _settled(call)
     return call
 
@@ -756,11 +758,13 @@ def _begin(
     capture = settings.capture_content
     scope_sink = _SCOPE.get()
     embedding = api == "embeddings"
-    messages = (
-        _embedding_inputs(kwargs.get("input"))
-        if embedding
-        else _as_seq(kwargs.get("messages") or kwargs.get("input") or kwargs.get("contents"))
-    )
+    given = kwargs.get("messages") or kwargs.get("input") or kwargs.get("contents")
+    if embedding:
+        messages = _embedding_inputs(kwargs.get("input"))
+    elif isinstance(given, str):
+        messages = (given,)  # the Responses API and google-genai take one prompt as a bare string
+    else:
+        messages = _as_seq(given)
     call = WrappedCall(
         provider=provider,
         api=api,
@@ -781,13 +785,23 @@ def _begin(
         pass  # metadata only: the embedded text is not captured, and `read_embeddings` adds the answer's shape
     elif capture:
         call.content = {
-            "system": _jsonable(kwargs.get("system") or kwargs.get("instructions")),
+            "system": _jsonable(_system_instruction(kwargs)),
             "messages": [_jsonable(item) for item in messages],
         }
     _bound_content(call, settings)
     if settings.capture_call_site:
         _call_site(call, settings)
     return call
+
+
+def _system_instruction(kwargs: dict[str, object]) -> object:
+    """The out-of-band instructions a request carries: Anthropic's `system`, the Responses API's `instructions`,
+    google-genai's `config.system_instruction`. OpenAI chat puts them in the messages, where they already are."""
+    direct = kwargs.get("system") or kwargs.get("instructions")
+    if direct is not None:
+        return direct
+    config = kwargs.get("config")
+    return None if config is None else _member(config, "system_instruction")
 
 
 #: What a frame's file becomes when it lies outside the project root: this marker and its basename only.

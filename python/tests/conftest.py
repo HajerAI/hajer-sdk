@@ -9,13 +9,20 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
 import pytest
 
 import hajer
+from hajer import _telemetry
 from hajer._json import JsonObject, JsonValue
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+#: A test's way to read what the emitter exported: configure settings, get the in-memory exporter the spans land in.
+Emitting = Callable[[hajer.HajerSettings], "InMemorySpanExporter"]
 
 Responder = Callable[[httpx.Request], httpx.Response]
 
@@ -129,6 +136,32 @@ def settings() -> hajer.HajerSettings:
         eval_upload_backoff_initial_ms=1,
         eval_upload_backoff_max_ms=2,
     )
+
+
+@pytest.fixture
+def emitting() -> Iterator[Emitting]:
+    """An isolated SDK provider with an in-memory exporter, configured as the emitter's; reset afterwards.
+
+    Skips without `hajer[otel]`. Every span test shares this one seam, so what they assert is what an application
+    with its own provider would see.
+    """
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    export = pytest.importorskip("opentelemetry.sdk.trace.export")
+    memory = pytest.importorskip("opentelemetry.sdk.trace.export.in_memory_span_exporter")
+    providers: list[object] = []
+
+    def configure(settings: hajer.HajerSettings) -> InMemorySpanExporter:
+        exporter = cast("InMemorySpanExporter", memory.InMemorySpanExporter())
+        provider = sdk.TracerProvider()
+        provider.add_span_processor(export.SimpleSpanProcessor(exporter))
+        providers.append(provider)
+        _telemetry.configure(settings, tracer_provider=provider)
+        return exporter
+
+    yield configure
+    _telemetry.configure(None)
+    for provider in providers:
+        cast(Callable[[], None], getattr(provider, "shutdown"))()  # noqa: B009 - an untyped module object
 
 
 @pytest.fixture(autouse=True)

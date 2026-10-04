@@ -374,8 +374,9 @@ class TestTheCallObserver:
 
     @pytest.fixture(autouse=True)
     def _no_observer_leaks(self) -> Iterator[None]:
+        previous = _wrap.call_observer()
         yield
-        _wrap.set_call_observer(None)
+        _wrap.set_call_observer(previous)
 
     def test_opened_then_settled_with_the_handle_it_was_given(self) -> None:
         seen: list[tuple[str, object]] = []

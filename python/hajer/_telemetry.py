@@ -1,11 +1,14 @@
-"""`hajer.workflow` / `component` / `tool` — the spans an application declares about itself, never a reason it fails.
+"""`hajer.workflow` / `component` / `tool` — the spans an application declares about itself — and the model spans.
 
-A model call is recorded by `wrap`; what this module records is the *shape around* the calls: which workflow a
-request is, which component of it is running, which tool it executed and with what. Those three spans are what an
-obligation is written against and what an eval's trajectory assertions read, so their names and attribute keys are
-fixed here and nowhere else: `hajer.workflow.id`, `hajer.component.id`, `hajer.tool.id`, and on a tool span the
-GenAI semantic-convention pair `gen_ai.tool.name` / `gen_ai.tool.call.arguments` that an eval engine's trajectory
-checks look for by exactly those keys.
+A model call is recorded by `wrap`; this module is where it becomes a span. The call observer installed in `_wrap`
+(`install`) is told when a call opens — inside the caller's own context, which is the span the model span belongs
+under — and when it settles, which is when the span is emitted, backdated to the call's start (`_model_spans`).
+What this module also records is the *shape around* the calls: which workflow a request is, which component of it
+is running, which tool it executed and with what. Those three spans are what an obligation is written against and
+what an eval's trajectory assertions read, so their names and attribute keys are fixed here and nowhere else:
+`hajer.workflow.id`, `hajer.component.id`, `hajer.tool.id`, and on a tool span the GenAI semantic-convention pair
+`gen_ai.tool.name` / `gen_ai.tool.call.arguments` that an eval engine's trajectory checks look for by exactly those
+keys.
 
 The ids are a stack in a `contextvars.ContextVar`, so a component inside a workflow carries the workflow's id and a
 tool inside both carries both — across `await`, and into a thread that copied the context the way `asyncio.to_thread`
@@ -44,25 +47,24 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Final, Literal, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
+from hajer import _semconv
 from hajer._errors import HajerConfigError
 from hajer._json import JsonObject
+from hajer._model_spans import Attributes, AttributeValue, ModelSpan, model_span
 from hajer._paths import OTEL_TRACES_PATH
-from hajer._redact import build_policy, redact_document
+from hajer._redact import ClientRedactionPolicy, build_policy, redact_document
 from hajer._settings import HajerSettings
-from hajer._wrap import Operation, fitted, scope
+from hajer._wrap import Operation, WrappedCall, fitted, scope, set_call_observer
 
 P = ParamSpec("P")
 R = TypeVar("R")
 
-#: What one span attribute may hold: the OpenTelemetry scalar types and a sequence of strings (the obligation ids).
-AttributeValue: TypeAlias = str | bool | int | float | tuple[str, ...]
-Attributes: TypeAlias = dict[str, AttributeValue]
 #: The three kinds of span this module emits, and the word each span's name begins with.
 Kind: TypeAlias = Literal["workflow", "component", "tool"]
 
 #: The operation name a tool span carries, spelled as the GenAI semantic conventions spell it: it is the value an
 #: eval engine's trajectory assertions select tool spans by.
-EXECUTE_TOOL: Final[str] = "execute_tool"
+EXECUTE_TOOL: Final[str] = _semconv.OPERATION_EXECUTE_TOOL
 #: What the `hajer` logger says, once per configuration, when the OTel half cannot be imported.
 OTEL_MISSING: Final[str] = (
     "hajer emits no spans: the OpenTelemetry SDK is not installed. "
@@ -77,9 +79,11 @@ SETTINGS_INVALID: Final[str] = (
 )
 _LOG: Final = logging.getLogger("hajer")
 _NO_ERROR: Final[tuple[None, None, None]] = (None, None, None)
-#: The catalog's default policy, built once: tool arguments are redacted under the same rules as every other
-#: document the SDK sends, and `build_policy()` with no extras cannot refuse.
+#: The catalog's default policy, built once: tool arguments and model content are redacted under the same rules as
+#: every other document the SDK sends, and `build_policy()` with no extras cannot refuse.
 _DEFAULT_POLICY: Final = build_policy()
+
+__all__ = ["AttributeValue", "Attributes"]
 
 
 # ── where the spans go ──────────────────────────────────────────────────────────────────────────
@@ -125,6 +129,8 @@ class Backend(Protocol):
     """What `hajer._telemetry_otel.build` returns. Structural, so this module never names an OTel type."""
 
     def start(self, name: str, attributes: Attributes, *, traceparent: str | None) -> SpanHandle: ...
+    def opened(self, call: WrappedCall, stamp: Attributes, *, traceparent: str | None) -> object: ...
+    def settled(self, handle: object, span: ModelSpan) -> None: ...
     def flush(self, timeout_ms: int) -> bool: ...
     def shutdown(self) -> None: ...
 
@@ -144,6 +150,7 @@ class _Configuration:
 
     settings: HajerSettings | None = None
     tracer_provider: object | None = None
+    policy: ClientRedactionPolicy | None = None
     backend: Backend | None = None
     backend_loaded: bool = False
     warned: bool = False
@@ -154,19 +161,27 @@ class _Configuration:
 _CONFIGURATION = _Configuration()
 
 
-def configure(settings: HajerSettings | None = None, *, tracer_provider: object | None = None) -> None:
-    """Choose the settings and the tracer provider every later span uses; `None` means read the environment lazily.
+def configure(
+    settings: HajerSettings | None = None,
+    *,
+    tracer_provider: object | None = None,
+    policy: ClientRedactionPolicy | None = None,
+) -> None:
+    """Choose the settings, the tracer provider and the redaction policy every later span uses.
 
-    The explicit override and the test seam in one: an application with its own OpenTelemetry setup passes the
-    provider it wants the spans on (the platform's exporter is added to it, beside the application's own), a test
-    passes an isolated SDK provider with an in-memory exporter, and `configure()` with nothing resets to the
-    defaults. Takes effect for the next span; an open span is unaffected. The previous backend is shut down, so a
-    provider the SDK built for the previous configuration stops exporting.
+    `None` means read the environment lazily, use the provider ownership decides, redact under the catalog's default
+    policy. The explicit override and the test seam in one: an application with its own OpenTelemetry setup passes
+    the provider it wants the spans on (the platform's exporter is added to it, beside the application's own), a
+    team with a redaction policy of its own (`hajer.build_policy(...)`) passes it, a test passes an isolated SDK
+    provider with an in-memory exporter, and `configure()` with nothing resets to the defaults. Takes effect for the
+    next span; an open span is unaffected. The previous backend is shut down, so a provider the SDK built for the
+    previous configuration stops exporting.
     """
     with _CONFIGURATION.lock:
         previous = _CONFIGURATION.backend
         _CONFIGURATION.settings = settings
         _CONFIGURATION.tracer_provider = tracer_provider
+        _CONFIGURATION.policy = policy
         _CONFIGURATION.backend = None
         _CONFIGURATION.backend_loaded = False
         _CONFIGURATION.warned = False
@@ -192,6 +207,11 @@ def _settings() -> HajerSettings:
                 _LOG.warning(SETTINGS_INVALID.format(error=error))
                 _CONFIGURATION.settings = HajerSettings()
         return _CONFIGURATION.settings
+
+
+def _policy() -> ClientRedactionPolicy:
+    with _CONFIGURATION.lock:
+        return _CONFIGURATION.policy if _CONFIGURATION.policy is not None else _DEFAULT_POLICY
 
 
 def _backend() -> Backend | None:
@@ -318,6 +338,79 @@ def eval_binding(
         yield
     finally:
         _BINDING.reset(token)
+
+
+def context_attributes(settings: HajerSettings, frame: _Frame, binding: _Binding | None) -> Attributes:
+    """What every span opened here carries from its surroundings: the enclosing ids, the environment, the eval row.
+
+    The same stamp goes on a declared span and on a model span, so a generation nested in a workflow says which
+    workflow — and, under `hajer eval`, which row — exactly as the workflow span does.
+    """
+    attributes: Attributes = {}
+    if frame.workflow is not None:
+        attributes[_semconv.WORKFLOW_ID] = frame.workflow
+    if frame.component is not None:
+        attributes[_semconv.COMPONENT_ID] = frame.component
+    if settings.environment is not None:
+        attributes[_semconv.DEPLOYMENT_ENVIRONMENT] = settings.environment
+        attributes[_semconv.DEPLOYMENT_ENVIRONMENT_NAME] = settings.environment
+    run_id = settings.eval_run_id if binding is None or binding.run_id is None else binding.run_id
+    if run_id is not None:
+        attributes[_semconv.EVAL_RUN_ID] = run_id
+    if binding is not None:
+        if binding.test_case_id is not None:
+            attributes[_semconv.EVAL_TEST_CASE_ID] = binding.test_case_id
+        if binding.workflow_id is not None:
+            attributes[_semconv.EVAL_WORKFLOW_ID] = binding.workflow_id
+        if binding.obligation_ids:
+            attributes[_semconv.EVAL_OBLIGATION_IDS] = binding.obligation_ids
+    return attributes
+
+
+# ── the model spans: what the call observer does ───────────────────────────────────────────────
+
+
+class _CallObserver:
+    """The one observer `_wrap` hands every recorded call to: a span at settle, parented where the call opened.
+
+    `opened` runs inside the caller's context and asks the backend for a handle that remembers it; `settled` may run
+    anywhere — a stream is consumed wherever the application consumes it — and emits the span from the record and
+    that handle. Both are already wrapped in `try` at the seam, and both guard again here: nothing in the emission
+    path may cost the call.
+    """
+
+    def opened(self, call: WrappedCall) -> object | None:
+        settings = _settings()
+        if not settings.model_spans:
+            return None
+        backend = _backend()
+        if backend is None:
+            return None
+        binding = _BINDING.get()
+        stamp = context_attributes(settings, _FRAME.get(), binding)
+        try:
+            return backend.opened(call, stamp, traceparent=None if binding is None else binding.traceparent)
+        except Exception:  # noqa: BLE001 - a backend that cannot open costs the span, never the call
+            return None
+
+    def settled(self, call: WrappedCall, handle: object | None) -> None:
+        if handle is None:
+            return
+        backend = _backend()
+        if backend is None:
+            return
+        try:
+            backend.settled(handle, model_span(call, _settings(), _policy()))
+        except Exception:  # noqa: BLE001, S110 - a span that cannot be emitted costs the span, never the call
+            pass
+
+
+_OBSERVER = _CallObserver()
+
+
+def install() -> None:
+    """Make this module the observer of every call `_wrap` records. `import hajer` does it once."""
+    set_call_observer(_OBSERVER)
 
 
 # ── the span ────────────────────────────────────────────────────────────────────────────────────
@@ -452,36 +545,20 @@ class Span:
         return f"{self._kind} {self._identity}"
 
     def _attributes(self, settings: HajerSettings, enclosing: _Frame, binding: _Binding | None) -> Attributes:
-        attributes: Attributes = {}
+        """The enclosing stamp, then this span's own id in its slot — a workflow names itself, never an enclosing one."""
+        attributes = context_attributes(settings, enclosing, binding)
         if self._kind == "workflow":
-            attributes["hajer.workflow.id"] = self._identity
+            attributes.pop(_semconv.COMPONENT_ID, None)
+            attributes[_semconv.WORKFLOW_ID] = self._identity
+        elif self._kind == "component":
+            attributes[_semconv.COMPONENT_ID] = self._identity
         else:
-            if enclosing.workflow is not None:
-                attributes["hajer.workflow.id"] = enclosing.workflow
-            if self._kind == "component":
-                attributes["hajer.component.id"] = self._identity
-            else:
-                if enclosing.component is not None:
-                    attributes["hajer.component.id"] = enclosing.component
-                attributes["hajer.tool.id"] = self._identity
-                attributes["gen_ai.tool.name"] = self._name or self._identity
-                attributes["gen_ai.operation.name"] = EXECUTE_TOOL
-                encoded = _tool_arguments(self._arguments, settings)
-                if encoded is not None:
-                    attributes["gen_ai.tool.call.arguments"] = encoded
-        if settings.environment is not None:
-            attributes["deployment.environment"] = settings.environment
-            attributes["deployment.environment.name"] = settings.environment
-        run_id = settings.eval_run_id if binding is None or binding.run_id is None else binding.run_id
-        if run_id is not None:
-            attributes["hajer.eval.run.id"] = run_id
-        if binding is not None:
-            if binding.test_case_id is not None:
-                attributes["hajer.eval.test_case.id"] = binding.test_case_id
-            if binding.workflow_id is not None:
-                attributes["hajer.eval.workflow.id"] = binding.workflow_id
-            if binding.obligation_ids:
-                attributes["hajer.eval.obligation.ids"] = binding.obligation_ids
+            attributes[_semconv.TOOL_ID] = self._identity
+            attributes[_semconv.TOOL_NAME] = self._name or self._identity
+            attributes[_semconv.OPERATION_NAME] = EXECUTE_TOOL
+            encoded = _tool_arguments(self._arguments, settings)
+            if encoded is not None:
+                attributes[_semconv.TOOL_CALL_ARGUMENTS] = encoded
         return attributes
 
 
@@ -497,9 +574,7 @@ def _tool_arguments(arguments: JsonObject | None, settings: HajerSettings) -> st
     if arguments is None or not settings.capture_content:
         return None
     try:
-        document, _entries = (
-            redact_document(arguments, policy=_DEFAULT_POLICY) if settings.redact_client else (arguments, ())
-        )
+        document, _entries = redact_document(arguments, policy=_policy()) if settings.redact_client else (arguments, ())
         result = fitted(document, settings.wrapped_call_max_bytes)
         if result is None:
             return None

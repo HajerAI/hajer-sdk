@@ -48,7 +48,7 @@ from hajer._redact import (
     redact_document,
 )
 from hajer._settings import HajerSettings
-from hajer._telemetry import component, configure, flush, tool, workflow
+from hajer._telemetry import component, configure, flush, install, tool, workflow
 from hajer._wrap import (
     Operation,
     ToolCall,
@@ -62,6 +62,10 @@ from hajer._wrap import (
 )
 
 __version__ = VERSION
+
+#: The span emitter listens to every recorded call from the moment the package is imported: a process that only
+#: ever calls `wrap()` (or is attached) gets its model spans without a second line.
+install()
 
 #: The public API. Everything else in this package is private and starts with an underscore.
 __all__ = [

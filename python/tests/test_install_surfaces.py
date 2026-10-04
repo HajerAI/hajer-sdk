@@ -238,11 +238,12 @@ def test_exporter_failure_does_not_change_provider_answer() -> None:
 
     plain = FakeOpenAI()
     wrapped = hajer.wrap(FakeOpenAI())
+    previous = _wrap.call_observer()
     _wrap.set_call_observer(BrokenExport())
     try:
         assert wrapped.chat.completions.create() == plain.chat.completions.create()
     finally:
-        _wrap.set_call_observer(None)
+        _wrap.set_call_observer(previous)
 
 
 def sse(provider: str, path: str) -> bytes:

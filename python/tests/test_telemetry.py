@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Sequence
 from typing import cast
 
 import pytest
@@ -14,41 +14,20 @@ import pytest
 import hajer
 from hajer import _telemetry
 from hajer._wrap import TRUNCATION_MARK
+from tests.conftest import Emitting
 from tests.fakes import FakeOpenAI
 
 pytest.importorskip("opentelemetry.sdk")
 
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanContext, StatusCode
-
-Emitting = Callable[[hajer.HajerSettings], InMemorySpanExporter]
 
 _SETTINGS = hajer.HajerSettings(environment="production")
 #: A W3C traceparent an eval engine would hand a provider: version, trace id, parent span id, sampled.
 _TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 _PARENT_ID = "b7ad6b7169203331"
 _TRACEPARENT = f"00-{_TRACE_ID}-{_PARENT_ID}-01"
-
-
-@pytest.fixture
-def emitting() -> Iterator[Emitting]:
-    """An isolated SDK provider with an in-memory exporter, configured as the emitter's; reset afterwards."""
-    providers: list[TracerProvider] = []
-
-    def configure(settings: hajer.HajerSettings) -> InMemorySpanExporter:
-        exporter = InMemorySpanExporter()
-        provider = TracerProvider()
-        provider.add_span_processor(SimpleSpanProcessor(exporter))
-        providers.append(provider)
-        _telemetry.configure(settings, tracer_provider=provider)
-        return exporter
-
-    yield configure
-    _telemetry.configure(None)
-    for provider in providers:
-        provider.shutdown()
 
 
 def _spans(exporter: InMemorySpanExporter) -> dict[str, ReadableSpan]:

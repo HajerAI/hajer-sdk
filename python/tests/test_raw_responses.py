@@ -120,9 +120,10 @@ class _Settled:
 def settled() -> Iterator[list[hajer.WrappedCall]]:
     """Every call handed to the observer — what reaches the span emitter."""
     seen: list[hajer.WrappedCall] = []
+    previous = _wrap.call_observer()
     _wrap.set_call_observer(_Settled(seen))
     yield seen
-    _wrap.set_call_observer(None)
+    _wrap.set_call_observer(previous)
 
 
 SETTINGS = hajer.HajerSettings(capture_content=True, disabled=True)

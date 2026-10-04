@@ -194,6 +194,11 @@ class HajerSettings(BaseModel):
     #: exported to the platform's OTLP receiver for the team (`hajer/_telemetry.py`). `0` keeps the spans on
     #: the application's own OpenTelemetry provider, if it has one, and sends nothing to Hajer.
     traces_enabled: bool = True
+    #: `HAJER_MODEL_SPANS` — **on by default.** Every model call `wrap`, `instrument` or `attach` records is emitted
+    #: as a `gen_ai` span of its own. `0` for a process whose model calls another instrumentation already traces:
+    #: the SDK suppresses its span when it sees that instrumentation's span around the same call, but best-effort,
+    #: and this is the switch that makes it certain. The declared spans (`hajer.workflow` and the rest) are unaffected.
+    model_spans: bool = True
     #: `HAJER_OTLP_ENDPOINT` — a collector of your own instead of the platform: the emitter exports to its
     #: `/v1/traces`, with no credential unless `HAJER_OTLP_HEADERS` names one. Falls back to
     #: `OTEL_EXPORTER_OTLP_ENDPOINT`, the standard variable. It wins over the platform target: a process that
@@ -297,6 +302,7 @@ class HajerSettings(BaseModel):
             redact_client=_boolean(source, "HAJER_REDACT_CLIENT", default=True),
             attach=_boolean(source, "HAJER_ATTACH", default=False),
             traces_enabled=_boolean(source, "HAJER_TRACES_ENABLED", default=True),
+            model_spans=_boolean(source, "HAJER_MODEL_SPANS", default=True),
             otlp_endpoint=_string(source, "HAJER_OTLP_ENDPOINT") or _string(source, "OTEL_EXPORTER_OTLP_ENDPOINT"),
             otlp_headers=_string(source, "HAJER_OTLP_HEADERS"),
             service_name=_string(source, "HAJER_SERVICE_NAME") or _string(source, "OTEL_SERVICE_NAME"),
@@ -371,6 +377,7 @@ VARIABLES: Final[tuple[tuple[str, str], ...]] = (
     ("redact_client", "HAJER_REDACT_CLIENT"),
     ("attach", "HAJER_ATTACH"),
     ("traces_enabled", "HAJER_TRACES_ENABLED"),
+    ("model_spans", "HAJER_MODEL_SPANS"),
     ("otlp_endpoint", "HAJER_OTLP_ENDPOINT"),
     ("otlp_headers", "HAJER_OTLP_HEADERS"),
     ("service_name", "HAJER_SERVICE_NAME"),
@@ -403,6 +410,7 @@ BOOLEAN_FIELDS: Final[tuple[str, ...]] = (
     "redact_client",
     "attach",
     "traces_enabled",
+    "model_spans",
     "disabled",
 )
 #: The one value that is never printed. A key in a terminal is a key in a scrollback buffer.

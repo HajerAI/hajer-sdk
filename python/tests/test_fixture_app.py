@@ -31,9 +31,10 @@ class _Settled:
 @pytest.fixture
 def settled() -> Iterator[_Settled]:
     observer = _Settled()
+    previous = _wrap.call_observer()
     _wrap.set_call_observer(observer)
     yield observer
-    _wrap.set_call_observer(None)
+    _wrap.set_call_observer(previous)
 
 
 def ticket() -> Ticket:

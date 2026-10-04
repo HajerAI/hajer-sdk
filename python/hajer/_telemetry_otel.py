@@ -16,6 +16,13 @@ vendor's SDK does when it adds its processor to the global provider — so point
 the collector it already had. With no target and no provider the tracer is OpenTelemetry's no-op one, and
 `hajer._telemetry` still runs the code.
 
+**A model span** is emitted when the recorded call settles, backdated to when it opened: OpenTelemetry exports only
+ended spans, so nothing is lost by starting late, and a stream settles in whatever task consumed it, where the
+context the span belongs under is gone — which is why `opened` captures that context into a handle. The span is never
+made current: it is a leaf, and the application's own structure is the structure. When another instrumentation
+already traces the same call (a `gen_ai` span current at open, or one that starts inside the call —
+`HajerContextProcessor` sees it), the SDK's own span is not emitted: one call, one span.
+
 Nothing here blocks a call: the exporter batches on `BatchSpanProcessor`'s own thread, bounded by the
 `HAJER_TRACE_*` settings, and an unreachable receiver costs at most one export timeout at exit.
 """
@@ -23,6 +30,7 @@ Nothing here blocks a call: the exporter batches on `BatchSpanProcessor`'s own t
 from __future__ import annotations
 
 import weakref
+from collections.abc import Mapping
 from contextvars import Token
 from dataclasses import dataclass
 from typing import Final
@@ -31,14 +39,17 @@ from opentelemetry import context, trace
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from hajer import _semconv
+from hajer._model_spans import Attributes, ModelSpan
 from hajer._paths import VERSION
 from hajer._settings import HajerSettings
-from hajer._telemetry import Attributes, ExportTarget, export_target
+from hajer._telemetry import ExportTarget, export_target
+from hajer._wrap import OPEN_CALL, WrappedCall
 
 #: The instrumentation scope the spans are emitted under: the SDK's own name and version.
 _SCOPE: Final[str] = "hajer"
@@ -75,6 +86,19 @@ class _OpenSpan:
 
 
 @dataclass(slots=True)
+class _Opened:
+    """What `opened` kept of the moment a call began: the context its span belongs under, and the stamp it carries.
+
+    `foreign` is set when another instrumentation's `gen_ai` span covers this call — already current when the call
+    opened, or started inside it — and means this module emits no span of its own for it.
+    """
+
+    parent: Context
+    stamp: Attributes
+    foreign: bool = False
+
+
+@dataclass(slots=True)
 class _Attached:
     """The exporter this module added to one provider, and the target it exports to."""
 
@@ -85,6 +109,52 @@ class _Attached:
 #: One exporter per provider, however many times `configure()` names the same one. Weak keys, so a provider a
 #: test built and dropped is not kept alive by the record of what was attached to it.
 _ATTACHED: Final[weakref.WeakKeyDictionary[TracerProvider, _Attached]] = weakref.WeakKeyDictionary()
+#: One `HajerContextProcessor` per provider this module ever emits through, for the same reason.
+_PROCESSED: Final[weakref.WeakKeyDictionary[TracerProvider, HajerContextProcessor]] = weakref.WeakKeyDictionary()
+
+
+def _says_model_call(attributes: Mapping[str, object] | None) -> bool:
+    """A span that says it is a model call, in the conventions' own words."""
+    return attributes is not None and _semconv.OPERATION_NAME in attributes
+
+
+def _is_model_span(span: trace.Span) -> bool:
+    """A recording SDK span that says it is a model call: another instrumentation's reading of one."""
+    return span.is_recording() and isinstance(span, ReadableSpan) and _says_model_call(span.attributes)
+
+
+class HajerContextProcessor(SpanProcessor):
+    """Watches every span the provider starts, for the one the SDK must not duplicate.
+
+    A client-level instrumentation (OpenTelemetry's own `openai` instrumentor, OpenLLMetry) patches the provider
+    class, which runs *inside* Hajer's instance-level patch: its model span begins after `opened` ran and before the
+    call settles, so it is only visible here. The open call in this context is marked foreign and emits nothing.
+    Every method is guarded: a processor that raised would raise inside the application's own span.
+    """
+
+    def on_start(self, span: Span, parent_context: Context | None = None) -> None:
+        del parent_context
+        self._claim(span.attributes)
+
+    def on_end(self, span: ReadableSpan) -> None:
+        self._claim(span.attributes)
+
+    def shutdown(self) -> None:
+        return
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        del timeout_millis
+        return True
+
+    def _claim(self, attributes: Mapping[str, object] | None) -> None:
+        try:
+            if not _says_model_call(attributes):
+                return
+            call: WrappedCall | None = OPEN_CALL.get()
+            if call is not None and isinstance(call.observer_handle, _Opened):
+                call.observer_handle.foreign = True
+        except Exception:  # noqa: BLE001, S110 - never into the application's own span
+            pass
 
 
 class OtelBackend:
@@ -108,6 +178,34 @@ class OtelBackend:
             parent = _W3C.extract({"traceparent": traceparent})
         span = self.tracer.start_span(name, context=parent, attributes=attributes)
         return _OpenSpan(span=span, token=context.attach(trace.set_span_in_context(span)))
+
+    def opened(self, call: WrappedCall, stamp: Attributes, *, traceparent: str | None) -> _Opened:
+        """Keep the context a call opened in — or the bound `traceparent` when no span is active — and its stamp.
+
+        A `gen_ai` span already current here is another instrumentation's reading of this very call: the handle says
+        so, and `settled` emits nothing for it.
+        """
+        del call
+        current = trace.get_current_span()
+        parent = context.get_current()
+        if traceparent is not None and not current.get_span_context().is_valid:
+            parent = _W3C.extract({"traceparent": traceparent})
+        return _Opened(parent=parent, stamp=dict(stamp), foreign=_is_model_span(current))
+
+    def settled(self, handle: object, span: ModelSpan) -> None:
+        """Emit the model span: started where the call opened, ended when it settled, never made current."""
+        if not isinstance(handle, _Opened) or handle.foreign:
+            return
+        emitted = self.tracer.start_span(
+            span.name,
+            context=handle.parent,
+            kind=SpanKind.CLIENT,
+            attributes={**handle.stamp, **span.attributes},
+            start_time=span.start_ns,
+        )
+        if span.error_type is not None:
+            emitted.set_status(Status(StatusCode.ERROR, span.error_type))
+        emitted.end(end_time=span.end_ns)
 
     def flush(self, timeout_ms: int) -> bool:
         """`force_flush` on the provider in use; False when there is none, so a caller never believes a no-op exported."""
@@ -146,6 +244,10 @@ def build(settings: HajerSettings, tracer_provider: object | None) -> OtelBacken
         owned = True
     if provider is None:
         return OtelBackend(trace.NoOpTracer(), None, owned=False)
+    if provider not in _PROCESSED:
+        watcher = HajerContextProcessor()
+        provider.add_span_processor(watcher)
+        _PROCESSED[provider] = watcher
     if target is not None:
         _attach(provider, target, settings)
     return OtelBackend(provider.get_tracer(_SCOPE, VERSION), provider, owned=owned)
