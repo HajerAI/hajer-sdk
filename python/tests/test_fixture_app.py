@@ -1,18 +1,24 @@
-"""The fixture app end to end: two model calls inside one workflow, recorded, and the reply sent.
+"""The fixture app end to end: two model calls inside one workflow and one session, as the spans say, and the reply sent.
 
-Nothing here touches a network. The provider is a fake client `wrap` instruments by attribute.
+Nothing here touches a network. The provider is a fake client `wrap` instruments by attribute; the spans land in
+an in-memory exporter.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 import hajer
 from hajer import _wrap
+from tests.conftest import Emitting
 from tests.fakes import FakeChatCompletion, FakeChoice, FakeMessage, FakeOpenAI
 from tests.fixture_app import Order, Outbox, Ticket, handle_ticket
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace import ReadableSpan
 
 
 class _Settled:
@@ -85,6 +91,23 @@ class TestEndToEnd:
         outcome = handle_ticket(ticket(), model_client=provider, outbox=outbox)
         assert outcome.reply == "On its way."
         assert outbox.sent == ["On its way."]
+
+    def test_the_turn_is_one_trace_in_one_conversation(self, settings: hajer.HajerSettings, emitting: Emitting) -> None:
+        exporter = emitting(settings)
+        provider = hajer.wrap(model_client("On its way."), settings=settings)
+        handle_ticket(ticket(), model_client=provider, outbox=Outbox())
+        finished = cast("Sequence[ReadableSpan]", exporter.get_finished_spans())
+        spans = {span.name: span for span in finished}
+        assert set(spans) == {"workflow wf_support", "chat support-classifier", "chat support-writer"}
+        workflow = spans["workflow wf_support"]
+        assert workflow.context is not None
+        for name in ("chat support-classifier", "chat support-writer"):
+            chat = spans[name]
+            attributes = dict(chat.attributes or {})
+            assert attributes["session.id"] == "conv-1"
+            assert attributes["hajer.workflow.id"] == "wf_support"
+            assert chat.parent is not None
+            assert chat.parent.span_id == workflow.context.span_id
 
     def test_the_workflow_owns_its_calls_and_leaves_the_task_clean(
         self, settings: hajer.HajerSettings, settled: _Settled

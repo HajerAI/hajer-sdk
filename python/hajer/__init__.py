@@ -31,6 +31,7 @@ same things where the code is.
 from __future__ import annotations
 
 from hajer._attach import Attachment, attach, attachment, detach
+from hajer._context import TraceContextScope, context, session, user
 from hajer._errors import (
     BodyOverBoundError,
     HajerConfigError,
@@ -84,6 +85,7 @@ __all__ = [
     "RedactionEntry",
     "ToolCall",
     "ToolResult",
+    "TraceContextScope",
     "UnsupportedClientError",
     "WrappedCall",
     "__version__",
@@ -93,13 +95,16 @@ __all__ = [
     "clear_wrapped_calls",
     "component",
     "configure",
+    "context",
     "detach",
     "flush",
     "instrument",
     "redact_document",
     "scope",
+    "session",
     "tool",
     "uninstrument",
+    "user",
     "workflow",
     "wrap",
     "wrapped_calls",

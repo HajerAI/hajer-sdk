@@ -48,7 +48,7 @@ from hajer import _semconv
 from hajer._model_spans import Attributes, ModelSpan
 from hajer._paths import VERSION
 from hajer._settings import HajerSettings
-from hajer._telemetry import ExportTarget, export_target
+from hajer._telemetry import ExportTarget, export_target, surrounding_attributes
 from hajer._wrap import OPEN_CALL, WrappedCall
 
 #: The instrumentation scope the spans are emitted under: the SDK's own name and version.
@@ -124,16 +124,29 @@ def _is_model_span(span: trace.Span) -> bool:
 
 
 class HajerContextProcessor(SpanProcessor):
-    """Watches every span the provider starts, for the one the SDK must not duplicate.
+    """Watches every span the provider starts: to stamp it, and for the one the SDK must not duplicate.
 
-    A client-level instrumentation (OpenTelemetry's own `openai` instrumentor, OpenLLMetry) patches the provider
-    class, which runs *inside* Hajer's instance-level patch: its model span begins after `opened` ran and before the
-    call settles, so it is only visible here. The open call in this context is marked foreign and emits nothing.
-    Every method is guarded: a processor that raised would raise inside the application's own span.
+    **Stamping.** A span another instrumentation starts inside a `hajer.session()`, a workflow or an eval row gets
+    the same `session.id`, `user.id`, `hajer.tags`, `hajer.metadata.*`, `hajer.workflow.id`, environment and
+    `hajer.eval.*` attributes the SDK's own spans get — each only when the span does not already carry it, so an
+    instrumentation that set one keeps its own. That is what lets the platform read a conversation whichever
+    library produced the spans in it.
+
+    **Duplicates.** A client-level instrumentation (OpenTelemetry's own `openai` instrumentor, OpenLLMetry) patches
+    the provider class, which runs *inside* Hajer's instance-level patch: its model span begins after `opened` ran
+    and before the call settles, so it is only visible here. The open call in this context is marked foreign and
+    emits nothing. Every method is guarded: a processor that raised would raise inside the application's own span.
     """
 
     def on_start(self, span: Span, parent_context: Context | None = None) -> None:
         del parent_context
+        try:
+            present = span.attributes or {}
+            for key, value in surrounding_attributes().items():
+                if key not in present:
+                    span.set_attribute(key, value)
+        except Exception:  # noqa: BLE001, S110 - never into the application's own span
+            pass
         self._claim(span.attributes)
 
     def on_end(self, span: ReadableSpan) -> None:

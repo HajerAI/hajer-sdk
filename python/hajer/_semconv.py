@@ -64,6 +64,8 @@ URL_TEMPLATE: Final[str] = "url.template"
 CODE_FUNCTION_NAME: Final[str] = "code.function.name"
 CODE_FILE_PATH: Final[str] = "code.file.path"
 CODE_LINE_NUMBER: Final[str] = "code.line.number"
+SESSION_ID: Final[str] = "session.id"
+USER_ID: Final[str] = "user.id"
 DEPLOYMENT_ENVIRONMENT_NAME: Final[str] = "deployment.environment.name"
 #: The older spelling of the environment, kept beside the new one for a receiver that reads either.
 DEPLOYMENT_ENVIRONMENT: Final[str] = "deployment.environment"
@@ -76,6 +78,8 @@ EVAL_RUN_ID: Final[str] = "hajer.eval.run.id"
 EVAL_TEST_CASE_ID: Final[str] = "hajer.eval.test_case.id"
 EVAL_WORKFLOW_ID: Final[str] = "hajer.eval.workflow.id"
 EVAL_OBLIGATION_IDS: Final[str] = "hajer.eval.obligation.ids"
+TAGS: Final[str] = "hajer.tags"
+METADATA_PREFIX: Final[str] = "hajer.metadata."
 
 # ── hajer: what a model span says that no convention names ──
 API: Final[str] = "hajer.api"

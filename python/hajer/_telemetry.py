@@ -47,7 +47,7 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Final, Literal, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
-from hajer import _semconv
+from hajer import _context, _semconv
 from hajer._errors import HajerConfigError
 from hajer._json import JsonObject
 from hajer._model_spans import Attributes, AttributeValue, ModelSpan, model_span
@@ -341,12 +341,13 @@ def eval_binding(
 
 
 def context_attributes(settings: HajerSettings, frame: _Frame, binding: _Binding | None) -> Attributes:
-    """What every span opened here carries from its surroundings: the enclosing ids, the environment, the eval row.
+    """What every span opened here carries from its surroundings: the conversation, the enclosing ids, the
+    environment, the eval row.
 
     The same stamp goes on a declared span and on a model span, so a generation nested in a workflow says which
-    workflow — and, under `hajer eval`, which row — exactly as the workflow span does.
+    workflow, which session — and, under `hajer eval`, which row — exactly as the workflow span does.
     """
-    attributes: Attributes = {}
+    attributes: Attributes = dict(_context.attributes(_context.current()))
     if frame.workflow is not None:
         attributes[_semconv.WORKFLOW_ID] = frame.workflow
     if frame.component is not None:
@@ -365,6 +366,15 @@ def context_attributes(settings: HajerSettings, frame: _Frame, binding: _Binding
         if binding.obligation_ids:
             attributes[_semconv.EVAL_OBLIGATION_IDS] = binding.obligation_ids
     return attributes
+
+
+def surrounding_attributes() -> Attributes:
+    """The stamp for a span something else is starting here: what `HajerContextProcessor` puts on it.
+
+    The same facts a span of the SDK's own gets at creation, read from the same places, so a third-party
+    instrumentation's span inside a workflow and a session says both exactly as the SDK's own would.
+    """
+    return context_attributes(_settings(), _FRAME.get(), _BINDING.get())
 
 
 # ── the model spans: what the call observer does ───────────────────────────────────────────────

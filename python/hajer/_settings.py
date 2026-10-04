@@ -53,6 +53,12 @@ REDACT_MAX_STRING_CHARS: Final[int] = 65_536
 #: component or source-trace id of at most 128 characters — the platform's own bound on a workflow key, so an id the
 #: eval declares is one the platform can store. A schema constant like the four above, not a budget a team tunes.
 ID_MAX_CHARS: Final[int] = 128
+#: What `hajer.context()` may carry (`hajer._context`): tags, metadata keys, and the length of any one value.
+#: Schema constants like `ID_MAX_CHARS`: a label past them is clipped, never refused, because a declaration about a
+#: conversation must not cost the request it is made in.
+CONTEXT_TAGS_MAX: Final[int] = 16
+CONTEXT_METADATA_KEYS_MAX: Final[int] = 32
+CONTEXT_VALUE_MAX_CHARS: Final[int] = 1_024
 
 #: What one environment tag may be (`HAJER_ENVIRONMENT`): lower-case letters, digits and dashes, a letter or digit
 #: first, at most 64 characters — the platform's own pattern for an environment name, so a tag this process sends is

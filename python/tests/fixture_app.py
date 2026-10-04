@@ -1,9 +1,10 @@
 """The fixture application: the shape a customer's own code has once the SDK is in it.
 
 `handle_ticket` is a support-reply workflow. It calls a model twice — once to classify the ticket, once to
-draft the reply — inside one declared workflow, and sends the draft. The SDK's part is the two lines a
-customer writes: `hajer.wrap(client)` where the client is built, and `@hajer.workflow(...)` on the handler.
-Everything else is the application's own.
+draft the reply — inside one declared workflow and the ticket's conversation, and sends the draft. The SDK's
+part is the three lines a customer writes: `hajer.wrap(client)` where the client is built,
+`@hajer.workflow(...)` on the handler, and `hajer.session(...)` around the turn. Everything else is the
+application's own.
 
 It runs unchanged with no Hajer credentials: the calls are still recorded locally, nothing leaves the
 process, the ticket is sent, and the fixture's own tests pass.
@@ -31,6 +32,8 @@ class Ticket:
     id: str
     question: str
     order: Order
+    #: The conversation this ticket is one turn of: what the platform groups the turn's trace under.
+    conversation_id: str = "conv-1"
 
 
 @dataclass
@@ -53,7 +56,12 @@ class TicketOutcome:
 
 @hajer.workflow("wf_support")
 def handle_ticket(ticket: Ticket, *, model_client: object, outbox: Outbox) -> TicketOutcome:
-    """Classify, draft, send."""
+    """Classify, draft, send — one turn of the ticket's conversation."""
+    with hajer.session(ticket.conversation_id):
+        return _answer(ticket, model_client=model_client, outbox=outbox)
+
+
+def _answer(ticket: Ticket, *, model_client: object, outbox: Outbox) -> TicketOutcome:
     chat = _chat(model_client)
 
     classification = chat(
