@@ -13,7 +13,7 @@ from hajer._errors import EvalMetadataError
 from hajer._json import JsonObject, JsonValue
 from hajer.evals import _hook_entry
 from hajer.evals._hook import HOOK_REPORT_SCHEMA_VERSION, WARNING_PREFIX, before_all, format_warnings, read_report
-from hajer.evals._metadata import E_HAJER_INVALID, W_NO_TEST_CASE_ID
+from hajer.evals._metadata import E_HAJER_INVALID, E_OBLIGATION_UNDECLARED, W_NO_TEST_CASE_ID
 
 PROMPTS: list[JsonValue] = [{"raw": "Answer {{question}}", "label": "support"}]
 PROVIDERS: list[JsonValue] = [{"id": "file://provider.py", "label": "app"}]
@@ -44,13 +44,20 @@ def _suite(tests: list[JsonValue], default_test: JsonObject | None = None) -> Js
 
 
 def _settings(
-    tmp_path: Path, *, eval_workflow: str | None = None, eval_obligations: str | None = None
+    tmp_path: Path,
+    *,
+    eval_workflow: str | None = None,
+    eval_obligations: str | None = None,
+    eval_manifest: str | None = None,
+    eval_manifest_obligations: str | None = None,
 ) -> HajerSettings:
     return HajerSettings(
         eval_hook_report=str(tmp_path / "r.json"),
         eval_run_id="run-1",
         eval_workflow=eval_workflow,
         eval_obligations=eval_obligations,
+        eval_manifest=eval_manifest,
+        eval_manifest_obligations=eval_manifest_obligations,
     )
 
 
@@ -373,3 +380,53 @@ class TestTheEntryPoint:
         result = hook(context, {"hookName": "beforeAll"})
         encoded = json.dumps({"type": "final_result", "data": result}, ensure_ascii=False)
         assert _descriptions(json.loads(encoded)["data"]) == ["refund status", "late refund"]
+
+
+class TestTheManifest:
+    """With a manifest in force, an obligation a test names must be one the manifest declares."""
+
+    def _suite(self) -> JsonObject:
+        return _suite(
+            [
+                _test(
+                    {"workflowId": "wf", "obligationIds": ["obl_a", "obl_nope"]}, test_case_id="t1", description="one"
+                ),
+                _test({"workflowId": "wf", "obligationIds": ["obl_a"]}, test_case_id="t2", description="two"),
+            ]
+        )
+
+    def test_an_undeclared_obligation_stops_the_run_and_names_the_test(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, eval_manifest="/repo/hajer.yaml", eval_manifest_obligations="obl_a,obl_b")
+        with pytest.raises(EvalMetadataError) as stopped:
+            before_all(self._suite(), settings=settings)
+        (error,) = stopped.value.errors
+        assert error.startswith(
+            f"[{E_OBLIGATION_UNDECLARED}] test #0 \"t1\": metadata.hajer.obligationIds.1 'obl_nope'"
+        )
+        assert "hajer.yaml" in error
+        assert "declared: obl_a, obl_b" in error
+        report = _report(tmp_path)
+        assert report["errors"] == [error]
+
+    def test_without_a_manifest_nothing_is_checked(self, tmp_path: Path) -> None:
+        context = before_all(self._suite(), settings=_settings(tmp_path))
+        suite = context["suite"]
+        assert isinstance(suite, dict)
+        tests = suite["tests"]
+        assert isinstance(tests, list)
+        assert len(tests) == 2
+
+    def test_a_manifest_that_declares_no_obligation_refuses_any(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, eval_manifest="/repo/hajer.yaml", eval_manifest_obligations="")
+        with pytest.raises(EvalMetadataError) as stopped:
+            before_all(self._suite(), settings=settings)
+        assert len(stopped.value.errors) == 3, (
+            "every named obligation is one error: two on the first test, one on the second"
+        )
+        assert all("(it declares none)" in error for error in stopped.value.errors)
+
+    def test_a_declared_obligation_passes(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, eval_manifest="/repo/hajer.yaml", eval_manifest_obligations="obl_a,obl_nope")
+        context = before_all(self._suite(), settings=settings)
+        assert isinstance(context["suite"], dict)
+        assert _report(tmp_path)["errors"] == []

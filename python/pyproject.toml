@@ -60,8 +60,9 @@ anthropic = ["anthropic>=0.75.0"]
 # the OpenTelemetry SDK, and the emitter exports over OTLP/HTTP when the process has no provider of its own.
 otel = ["opentelemetry-sdk>=1.37.0", "opentelemetry-exporter-otlp-proto-http>=1.37.0"]
 # `hajer eval`: the eval runner. Its engine is upstream promptfoo, installed from npm at the exact version
-# pinned in `hajer/evals/engine/package.json` (Node >= 22.22 on PATH); the Python side needs only `[otel]`.
-evals = ["hajer[otel]"]
+# pinned in `hajer/evals/engine/package.json` (Node >= 22.22 on PATH); the Python side needs `[otel]` and a YAML
+# reader for the repository's `hajer.yaml`.
+evals = ["hajer[otel]", "pyyaml>=6.0"]
 
 # `hajer` on the command line is `python -m hajer`: a console script cannot be conditional on an extra, so
 # `hajer eval` checks for Node and the engine itself and says what to install.
@@ -91,6 +92,7 @@ dev = [
     "vulture>=2.16",
     "httpx2>=2.13.0",
     "langchain-openai>=0.3",
+    "types-pyyaml>=6.0",
 ]
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────

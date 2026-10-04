@@ -182,6 +182,51 @@ def settings(tmp_path: Path) -> HajerSettings:
     return HajerSettings(cache_dir=str(tmp_path / "cache"), eval_otlp_port=43180)
 
 
+MANIFEST = """version: 1
+suites:
+  - id: support
+    path: evals/support.yaml
+    description: Support regression
+  - id: billing
+    path: evals/billing.yaml
+obligations:
+  - id: obl_a
+    title: A
+    workflow: wf_support
+"""
+
+
+@pytest.fixture
+def repository(tmp_path: Path) -> Path:
+    """A repository with a manifest and two declared suites, the working directory one level down."""
+    root = tmp_path / "project"
+    (root / "evals").mkdir(parents=True)
+    (root / "app").mkdir()
+    for name in ("support", "billing"):
+        (root / "evals" / f"{name}.yaml").write_text("prompts: ['{{message}}']\nproviders: [echo]\ntests: []\n")
+    (root / "hajer.yaml").write_text(MANIFEST)
+    return root
+
+
+class CountingEngine(FakeEngine):
+    """One exit code per run, in order: what a manifest with a failing suite looks like."""
+
+    def __init__(self, codes: list[int]) -> None:
+        super().__init__()
+        self.codes = codes
+
+    def __call__(self, command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        self.exit_code = self.codes[len(self.commands)] if len(self.commands) < len(self.codes) else 0
+        if "-o" in command:
+            self.document = results_document(success=self.exit_code == 0)
+        return super().__call__(command, **options)  # pyright: ignore[reportArgumentType] - the fake's own seams
+
+
+def _run_ids() -> Callable[[], str]:
+    counter = iter(range(1, 100))
+    return lambda: f"evalrun_{next(counter):032x}"
+
+
 def out(rt: Runtime) -> str:
     return cast(io.StringIO, rt.stdout).getvalue()
 
@@ -220,7 +265,7 @@ class TestConfiguration:
         (tmp_path / "project").mkdir()
         rt = runtime(tmp_path, FakeEngine())
         assert _cli.main([], settings=settings, runtime=rt) == EXIT_USAGE
-        assert "no promptfoo configuration" in err(rt)
+        assert "no hajer.yaml and no promptfoo configuration" in err(rt)
 
     def test_a_named_configuration_that_does_not_exist_is_a_usage_error(
         self, tmp_path: Path, project: Path, settings: HajerSettings
@@ -400,6 +445,152 @@ class TestUpload:
         assert "the payload is kept at" in err(rt)
         rt = runtime(tmp_path, FakeEngine(exit_code=100, document=results_document(success=False)), upload=refused)
         assert _cli.main(["--upload"], settings=settings, runtime=rt) == 100
+
+
+class TestTheManifest:
+    def test_every_declared_suite_is_one_run_from_the_manifests_directory(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        engine = FakeEngine()
+        rt = runtime(tmp_path, engine, cwd=repository / "app", new_run_id=_run_ids())
+        assert _cli.main(["--no-cache"], settings=settings, runtime=rt) == 0
+        assert len(engine.commands) == 2
+        first, second = engine.commands
+        assert first[3:5] == ["-c", str((repository / "evals" / "support.yaml").resolve())]
+        assert second[3:5] == ["-c", str((repository / "evals" / "billing.yaml").resolve())]
+        assert first[-1] == "--no-cache"
+        run_ids = [environment["HAJER_EVAL_RUN_ID"] for environment in engine.environments]
+        assert len(set(run_ids)) == 2, "one run id per suite"
+        for environment in engine.environments:
+            assert environment["HAJER_EVAL_MANIFEST"] == str(repository / "hajer.yaml")
+            assert environment["HAJER_EVAL_MANIFEST_OBLIGATIONS"] == "obl_a"
+        payloads = [
+            json.loads((tmp_path / "cache" / "runs" / run_id / "payload.json").read_text()) for run_id in run_ids
+        ]
+        assert [payload["suiteId"] for payload in payloads] == ["support", "billing"]
+        assert [payload["config"]["path"] for payload in payloads] == ["evals/support.yaml", "evals/billing.yaml"]
+        assert "hajer eval (suite support): passed" in out(rt)
+        assert "hajer eval (suite billing): passed" in out(rt)
+
+    def test_the_git_context_is_read_from_the_manifests_directory(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        roots: list[Path] = []
+
+        def git(root: Path, _ci: Mapping[str, str], **_kwargs: object) -> GitContext | None:
+            roots.append(root)
+            return None
+
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository / "app", new_run_id=_run_ids(), git=git)
+        _cli.main([], settings=settings, runtime=rt)
+        assert roots == [repository, repository]
+
+    def test_suite_picks_one_and_an_unknown_one_is_a_usage_error(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        engine = FakeEngine()
+        rt = runtime(tmp_path, engine, cwd=repository)
+        assert _cli.main(["--suite", "billing"], settings=settings, runtime=rt) == 0
+        (command,) = engine.commands
+        assert command[4].endswith("billing.yaml")
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository)
+        assert _cli.main(["--suite", "nope"], settings=settings, runtime=rt) == EXIT_USAGE
+        assert "declares no such suite (declared: support, billing)" in err(rt)
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository)
+        assert (
+            _cli.main(["--suite", "support", "-c", "evals/support.yaml"], settings=settings, runtime=rt) == EXIT_USAGE
+        )
+        assert "cannot be combined with -c" in err(rt)
+
+    def test_suite_without_a_manifest_is_a_usage_error(
+        self, tmp_path: Path, project: Path, settings: HajerSettings
+    ) -> None:
+        rt = runtime(tmp_path, FakeEngine())
+        assert _cli.main(["--suite", "support"], settings=settings, runtime=rt) == EXIT_USAGE
+        assert "no hajer.yaml" in err(rt)
+
+    def test_the_exit_code_is_the_worst_of_the_suites(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        engine = CountingEngine([0, 100])
+        rt = runtime(tmp_path, engine, cwd=repository, new_run_id=_run_ids())
+        assert _cli.main([], settings=settings, runtime=rt) == 100
+        assert len(engine.commands) == 2, "a failing suite does not stop the next one"
+        assert "(suite support): passed" in out(rt)
+        assert "(suite billing): failed" in out(rt)
+
+    def test_a_usage_error_in_one_suite_stops_the_run_there(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        failing: JsonObject = {"warnings": [], "errors": ["[E_HAJER_INVALID] test #1: bad"], "tests": []}
+        engine = FakeEngine(exit_code=1, report=failing, write_results=False)
+        rt = runtime(tmp_path, engine, cwd=repository, new_run_id=_run_ids())
+        assert _cli.main([], settings=settings, runtime=rt) == EXIT_USAGE
+        assert len(engine.commands) == 1
+
+    def test_payload_out_is_a_directory_of_suite_files_for_several_and_a_file_for_one(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository, new_run_id=_run_ids())
+        assert _cli.main(["--payload-out", "out"], settings=settings, runtime=rt) == 0
+        assert sorted(path.name for path in (repository / "out").iterdir()) == ["billing.json", "support.json"]
+        assert json.loads((repository / "out" / "support.json").read_text())["suiteId"] == "support"
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository, new_run_id=_run_ids())
+        assert _cli.main(["--suite", "support", "--payload-out", "one.json"], settings=settings, runtime=rt) == 0
+        assert json.loads((repository / "one.json").read_text())["suiteId"] == "support"
+
+    def test_c_runs_only_the_named_file_and_the_payload_names_no_suite(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        engine = FakeEngine()
+        rt = runtime(tmp_path, engine, cwd=repository, new_run_id=_run_ids())
+        assert _cli.main(["-c", "evals/support.yaml"], settings=settings, runtime=rt) == 0
+        (command,) = engine.commands
+        (environment,) = engine.environments
+        assert environment["HAJER_EVAL_MANIFEST"].endswith("hajer.yaml"), (
+            "the manifest still says which obligations exist"
+        )
+        payload = json.loads((tmp_path / "cache" / "runs" / f"evalrun_{1:032x}" / "payload.json").read_text())
+        assert payload["suiteId"] is None
+        assert payload["config"]["path"] == "evals/support.yaml"
+        assert "-c" in command
+
+    def test_an_undeclared_obligation_filter_is_refused_before_the_engine(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        engine = FakeEngine()
+        rt = runtime(tmp_path, engine, cwd=repository)
+        assert _cli.main(["--obligation", "obl_nope"], settings=settings, runtime=rt) == EXIT_USAGE
+        assert "--obligation obl_nope: not declared in hajer.yaml (declared: obl_a)" in err(rt)
+        assert engine.commands == []
+        rt = runtime(tmp_path, engine, cwd=repository, new_run_id=_run_ids())
+        assert _cli.main(["--obligation", "obl_a"], settings=settings, runtime=rt) == 0
+        assert engine.environments[0]["HAJER_EVAL_OBLIGATIONS"] == "obl_a"
+
+    def test_an_invalid_manifest_is_a_usage_error_naming_it(
+        self, tmp_path: Path, repository: Path, settings: HajerSettings
+    ) -> None:
+        (repository / "hajer.yaml").write_text("version: 3\n")
+        rt = runtime(tmp_path, FakeEngine(), cwd=repository)
+        assert _cli.main([], settings=settings, runtime=rt) == EXIT_USAGE
+        assert "HAJER_INVALID_MANIFEST" in err(rt)
+        assert "version" in err(rt)
+
+    def test_without_a_manifest_the_environment_carries_no_manifest_variables(
+        self, tmp_path: Path, project: Path, settings: HajerSettings
+    ) -> None:
+        engine = FakeEngine()
+        _cli.main([], settings=settings, runtime=runtime(tmp_path, engine))
+        (environment,) = engine.environments
+        assert "HAJER_EVAL_MANIFEST" not in environment
+        assert "HAJER_EVAL_MANIFEST_OBLIGATIONS" not in environment
+
+    def test_the_project_id_flag_is_gone(self, tmp_path: Path, project: Path, settings: HajerSettings) -> None:
+        engine = FakeEngine()
+        rt = runtime(tmp_path, engine)
+        _cli.main(["--project-id", "p"], settings=settings, runtime=rt)
+        (command,) = engine.commands
+        assert command[-2:] == ["--project-id", "p"], "an unknown flag is the engine's now, like any other"
 
 
 def test_the_console_script_hands_eval_to_the_runner() -> None:

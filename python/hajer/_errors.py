@@ -14,6 +14,8 @@ for the moments where silence would be worse than a failure:
 * `EvalMetadataError` — `hajer eval` only. Raised inside the eval engine's `beforeAll` hook process
   when a test's `metadata.hajer` is malformed, so the run stops before a single provider call and the
   terminal names the test. That process is the engine's, never the customer's application.
+* `ManifestError` — `hajer eval` only, in its own process: the repository's `hajer.yaml` cannot be
+  read as a manifest, and the terminal names the file and the key.
 """
 
 from __future__ import annotations
@@ -66,3 +68,14 @@ class EvalMetadataError(HajerError):
     def __init__(self, errors: tuple[str, ...]) -> None:
         super().__init__(f"{self.code}: " + "; ".join(errors))
         self.errors = errors
+
+
+class ManifestError(HajerError):
+    """The repository's `hajer.yaml` is not a manifest this reader accepts. Raised only by `hajer eval`."""
+
+    code = "HAJER_INVALID_MANIFEST"
+
+    def __init__(self, path: object, reason: str) -> None:
+        super().__init__(f"{self.code}: {path} {reason}")
+        self.path = str(path)
+        self.reason = reason

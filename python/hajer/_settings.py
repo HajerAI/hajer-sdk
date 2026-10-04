@@ -59,6 +59,13 @@ ID_MAX_CHARS: Final[int] = 128
 CONTEXT_TAGS_MAX: Final[int] = 16
 CONTEXT_METADATA_KEYS_MAX: Final[int] = 32
 CONTEXT_VALUE_MAX_CHARS: Final[int] = 1_024
+#: What a repository's `hajer.yaml` may hold (`hajer.evals._manifest`): the platform reads the file by the same
+#: bounds, so a manifest this reader accepts is one the platform stores.
+MANIFEST_FILE_MAX_BYTES: Final[int] = 262_144
+MANIFEST_SUITES_MAX: Final[int] = 100
+MANIFEST_OBLIGATIONS_MAX: Final[int] = 500
+MANIFEST_TITLE_MAX_CHARS: Final[int] = 512
+MANIFEST_DESCRIPTION_MAX_CHARS: Final[int] = 4_096
 
 #: What one environment tag may be (`HAJER_ENVIRONMENT`): lower-case letters, digits and dashes, a letter or digit
 #: first, at most 64 characters — the platform's own pattern for an environment name, so a tag this process sends is
@@ -270,6 +277,11 @@ class HajerSettings(BaseModel):
     eval_obligations: str | None = None
     #: `HAJER_EVAL_HOOK_REPORT` — where the hook writes what it classified, filtered and warned about.
     eval_hook_report: str | None = None
+    #: `HAJER_EVAL_MANIFEST` — the `hajer.yaml` the run was started under, carried to the hook; with it set, every
+    #: obligation a test names must be one the manifest declares.
+    eval_manifest: str | None = None
+    #: `HAJER_EVAL_MANIFEST_OBLIGATIONS` — the obligation ids that manifest declares, comma-separated (empty allowed).
+    eval_manifest_obligations: str | None = None
 
     # ── kill switch ─────────────────────────────────────────────────────────────────────────────
     #: `HAJER_DISABLED` — inert regardless of the key.
@@ -338,6 +350,8 @@ class HajerSettings(BaseModel):
             eval_workflow=_string(source, "HAJER_EVAL_WORKFLOW"),
             eval_obligations=_string(source, "HAJER_EVAL_OBLIGATIONS"),
             eval_hook_report=_string(source, "HAJER_EVAL_HOOK_REPORT"),
+            eval_manifest=_string(source, "HAJER_EVAL_MANIFEST"),
+            eval_manifest_obligations=_string(source, "HAJER_EVAL_MANIFEST_OBLIGATIONS"),
             disabled=_boolean(source, "HAJER_DISABLED", default=False),
         )
 
@@ -360,9 +374,12 @@ class HajerSettings(BaseModel):
     @property
     def eval_obligation_ids(self) -> tuple[str, ...]:
         """`HAJER_EVAL_OBLIGATIONS` as the ids it names, blanks dropped."""
-        if self.eval_obligations is None:
-            return ()
-        return tuple(item.strip() for item in self.eval_obligations.split(",") if item.strip())
+        return _ids(self.eval_obligations)
+
+    @property
+    def eval_declared_obligation_ids(self) -> tuple[str, ...]:
+        """`HAJER_EVAL_MANIFEST_OBLIGATIONS` as the ids it names, blanks dropped."""
+        return _ids(self.eval_manifest_obligations)
 
 
 #: Every field of `HajerSettings` and the `HAJER_*` variable that fills it, in declaration order. One
@@ -408,6 +425,8 @@ VARIABLES: Final[tuple[tuple[str, str], ...]] = (
     ("eval_workflow", "HAJER_EVAL_WORKFLOW"),
     ("eval_obligations", "HAJER_EVAL_OBLIGATIONS"),
     ("eval_hook_report", "HAJER_EVAL_HOOK_REPORT"),
+    ("eval_manifest", "HAJER_EVAL_MANIFEST"),
+    ("eval_manifest_obligations", "HAJER_EVAL_MANIFEST_OBLIGATIONS"),
     ("disabled", "HAJER_DISABLED"),
 )
 #: Every boolean setting. `doctor` prints them, and one test asserts that each reads every spelling.
@@ -451,6 +470,8 @@ def eval_engine_environment(
     python_executable: str,
     workflow: str | None = None,
     obligations: tuple[str, ...] = (),
+    manifest: Path | None = None,
+    declared_obligations: tuple[str, ...] = (),
 ) -> dict[str, str]:
     """The environment `hajer eval` starts the engine in: this process's, minus the Hajer key, plus the switches.
 
@@ -478,6 +499,12 @@ def eval_engine_environment(
             "HAJER_EVAL_HOOK_REPORT": str(Path(run_dir) / "hook-report.json"),
         }
     )
+    if manifest is not None:
+        environment["HAJER_EVAL_MANIFEST"] = str(manifest)
+        environment["HAJER_EVAL_MANIFEST_OBLIGATIONS"] = ",".join(declared_obligations)
+    else:
+        environment.pop("HAJER_EVAL_MANIFEST", None)
+        environment.pop("HAJER_EVAL_MANIFEST_OBLIGATIONS", None)
     return environment
 
 
@@ -513,6 +540,12 @@ def _rendered(name: str, value: object, *, set_in_env: bool) -> str:
     if value is None:
         return ABSENT
     return str(value)
+
+
+def _ids(joined: str | None) -> tuple[str, ...]:
+    if joined is None:
+        return ()
+    return tuple(item.strip() for item in joined.split(",") if item.strip())
 
 
 def _string(env: Mapping[str, str], name: str) -> str | None:

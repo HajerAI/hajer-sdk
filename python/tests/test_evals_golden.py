@@ -125,6 +125,8 @@ class TestTheGoldenRun:
         assert validated.stats.passed == 4
         assert validated.engine.version == pinned().version
         assert validated.engine.lockfile_digest == pinned().lockfile_digest
+        assert validated.suite_id == "support", "the example's hajer.yaml drove the run"
+        assert "hajer eval (suite support): passed" in stdout
 
     def test_every_row_is_classified_and_the_platform_rows_carry_a_trace(
         self, golden: tuple[int, str, str, JsonObject]

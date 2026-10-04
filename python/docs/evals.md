@@ -1,17 +1,42 @@
 # Evals: `hajer eval`
 
-`hajer eval` runs an ordinary [promptfoo](https://www.promptfoo.dev/docs/configuration/guide/) configuration
+`hajer eval` runs ordinary [promptfoo](https://www.promptfoo.dev/docs/configuration/guide/) configurations
 on a pinned copy of promptfoo and connects every result to the same stable identity the production SDK emits:
 which workflow a test exercised, which obligations it covers, which components and tools actually ran, and
-which commit it ran against. Nothing about promptfoo's format changes. The additions are a reserved metadata
-namespace, three decorators, one provider helper, and a payload.
+which commit it ran against. Nothing about promptfoo's format changes. The additions are a manifest naming the
+repository's suites and obligations, a reserved metadata namespace, three decorators, one provider helper, and
+a payload.
 
 ```bash
 pip install "hajer[evals]"     # Node >= 22.22 on PATH; the engine installs itself on first run
-hajer eval                     # runs ./promptfooconfig.yaml, exactly as `promptfoo eval` would
+hajer eval                     # runs every suite hajer.yaml declares — or ./promptfooconfig.yaml without one
 ```
 
 A worked example lives in [`examples/support/`](../examples/support/).
+
+## What a repository declares: `hajer.yaml`
+
+One file at the repository root names the suites and the obligations. `hajer eval` reads it to know what to
+run and which obligation ids a test may name; the Hajer platform reads the same file through the repository's
+GitHub connection, so the suites, their tests and the obligations are on the platform before the first run is
+uploaded.
+
+```yaml
+version: 1
+suites:
+  - id: support                               # ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$, unique
+    path: evals/support/promptfooconfig.yaml   # relative to this file, inside the repository
+    description: Customer support regression   # optional
+obligations:
+  - id: obl_refund_status_disclosed            # the same id pattern, unique
+    title: Refund status is disclosed accurately
+    workflow: wf_support                       # the workflow the obligation is about
+    description: ...                           # optional
+```
+
+The schema is strict — an unknown key, a duplicate id, a path outside the repository, a suite file that does
+not exist — and a refusal names the file and the key (exit code 2). The file is found in the working directory
+or any directory above it, so `hajer eval` runs the same from a service's own directory as from the root.
 
 ## What a test declares
 
@@ -107,23 +132,28 @@ trajectory assertions see the trace. `hajer.evals.bind(context)` is the same thi
 ## The command
 
 ```
-hajer eval [-c PATH ...] [--workflow ID] [--obligation ID ...] [--upload] [--project-id ID]
+hajer eval [-c PATH ...] [--suite ID] [--workflow ID] [--obligation ID ...] [--upload]
            [--payload-out PATH] [--install-only] [--engine-help] [any promptfoo eval flag]
 ```
 
-- With no `-c`, promptfoo's own `promptfooconfig.*` in the working directory is used.
+- With no `-c` and a `hajer.yaml`, every declared suite is one engine run, one payload and one upload, from the
+  manifest's directory; `--suite ID` runs one of them. Without a manifest, promptfoo's own `promptfooconfig.*`
+  in the working directory is used.
+- With `-c`, only the named files run; the manifest, when there is one, still says which obligation ids a test
+  may name. `--suite` and `-c` cannot be combined.
 - `--workflow` / `--obligation` keep only the tests whose metadata matches (both filters AND; a plain test never
   matches a filter). The filter is applied in the hook, because promptfoo's `--filter-metadata` reads top-level
-  keys only.
+  keys only. An `--obligation` the manifest does not declare is refused before the engine starts.
 - Every other flag goes to `promptfoo eval` unchanged: `--no-cache`, `-j 4`, `--filter-pattern`, `--repeat`, …
 - The payload is always written to the run directory (`~/.cache/hajer/runs/<run id>/payload.json`), and to
-  `--payload-out` as well when given.
-- `--upload` sends it to `POST /api/teams/{team}/projects/{project}/eval-runs` with the team key; the project
-  comes from `--project-id` or `HAJER_PROJECT_ID`. Without credentials the upload is reported `skipped`; a
-  refused or unreachable upload is reported `failed` on stderr. **Neither changes the exit code.**
+  `--payload-out` as well when given: a file for one suite, a directory of `<suite id>.json` for several.
+- `--upload` sends each payload to `POST /api/teams/{team}/eval-runs` with the team key; the platform places
+  the run by the repository the payload's git context names. Without credentials the upload is reported
+  `skipped`; a refused or unreachable upload is reported `failed` on stderr. **Neither changes the exit code.**
 
-Exit codes: the engine's, unchanged — `0`, or `100` when a test fails — plus the runner's own: `2` usage (no
-configuration, invalid `metadata.hajer`, no test matched a filter), `3` Node or npm missing or older than
+Exit codes: the engine's, unchanged — `0`, or `100` when a test fails (the worst of the suites, for a manifest
+run) — plus the runner's own: `2` usage (no configuration, an invalid manifest, invalid `metadata.hajer`, an
+obligation the manifest does not declare, no test matched a filter), `3` Node or npm missing or older than
 22.22, `4` the engine could not be installed or smoke-tested, `5` the engine finished but wrote no readable
 results.
 
@@ -136,7 +166,8 @@ schemaVersion, runId, createdAt, status (passed | failed | errored | aborted), e
 engine { name: promptfoo, version, lockfileDigest, nodeVersion, evalId }
 sdk { version }
 git { commitSha, branch, dirty, remoteUrl, ci { provider, runId, prNumber, baseRef, headRef, repository } }
-config { path, description, providerIds[] }
+suiteId                          # the suite's id in hajer.yaml; null for a bare -c
+config { path, description, providerIds[] }   # path relative to hajer.yaml when it drove the run
 filters { workflowId, obligationIds[] }
 stats { total, passed, failed, errored, durationMs, tokenUsage, cost }
 warnings[]
@@ -147,7 +178,8 @@ results[] {
   assertions[] { type, metric, passed, score, reason, weight },
   latencyMs, tokenUsage, cost, traceId, evaluationId,
   output,                        # redacted with the client-side catalog, clipped to HAJER_EVAL_OUTPUT_MAX_CHARS
-  spans[] { spanId, parentSpanId, name, startTime, endTime, status, attributes },   # hajer.*, gen_ai.*, deployment.*, tool.* only
+  spans[] { spanId, parentSpanId, name, startTime, endTime, status, attributes },   # startTime/endTime: epoch milliseconds
+                                   # attributes: hajer.*, gen_ai.*, deployment.*, tool.*, session.*, user.*, server.*, error.*, code.*
   spanSummary { count, errorCount, toolNames[], componentIds[], workflowIds[] }
 }
 ```
@@ -159,7 +191,6 @@ starts and used as the upload's idempotency key, so a retried CI step stores one
 
 | Variable | Default | What it is, and when to change it |
 |---|---|---|
-| `HAJER_PROJECT_ID` | absent | The project an upload lands in. Set it in CI beside the key and team, or pass `--project-id`. |
 | `HAJER_CACHE_DIR` | `$XDG_CACHE_HOME/hajer`, else `~/.cache/hajer` | Where the engine is installed and runs are kept. Point CI's cache action at `<dir>/engine`. |
 | `HAJER_OTLP_ENDPOINT` | `OTEL_EXPORTER_OTLP_ENDPOINT`, else absent | Where the emitter exports when the process has no OpenTelemetry provider of its own. `hajer eval` sets it. |
 | `HAJER_TRACE_FLUSH_TIMEOUT_MS` | `2000` | How long `flush()` waits for spans to leave before a provider answers; it also bounds one export request to the endpoint, so an unreachable collector costs at most this much at exit. |
@@ -172,7 +203,8 @@ starts and used as the upload's idempotency key, so a retried CI step stores one
 | `HAJER_EVAL_OUTPUT_MAX_CHARS` | `4096` | Characters of a result's output kept in the payload. |
 | `HAJER_EVAL_SPANS_MAX` | `256` | Spans of one result's trace kept in the payload; the summary counts them all. |
 | `HAJER_EVAL_GIT_TIMEOUT_S` | `5` | How long one `git` read for the run's commit context may take; a slow one means no context, not a hang. |
-| `HAJER_EVAL_RUN_ID`, `HAJER_EVAL_WORKFLOW`, `HAJER_EVAL_OBLIGATIONS`, `HAJER_EVAL_HOOK_REPORT` | set by `hajer eval` | Carried to the engine process for the hook and the emitter. Never set by hand. |
+| `HAJER_EVAL_UPLOAD_BACKOFF_INITIAL_MS` / `_MAX_MS` | `200` / `30000` | The doubling wait between upload attempts, and its ceiling. |
+| `HAJER_EVAL_RUN_ID`, `HAJER_EVAL_WORKFLOW`, `HAJER_EVAL_OBLIGATIONS`, `HAJER_EVAL_HOOK_REPORT`, `HAJER_EVAL_MANIFEST`, `HAJER_EVAL_MANIFEST_OBLIGATIONS` | set by `hajer eval` | Carried to the engine process for the hook and the emitter. Never set by hand. |
 
 The engine itself — what is pinned, where it installs, what `hajer eval` switches off, how to bump it — is in
 [evals-engine.md](evals-engine.md).

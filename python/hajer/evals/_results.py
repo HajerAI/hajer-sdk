@@ -61,7 +61,17 @@ from hajer.evals._payload import (
 
 #: The span attribute namespaces that travel. Everything else a span carries — `http.*`, `db.*`, a framework's
 #: own keys — stays in the customer's CI: the platform reads these four and nothing it does not read is sent.
-_ATTRIBUTE_PREFIXES: Final[tuple[str, ...]] = ("hajer.", "gen_ai.", "deployment.", "tool.")
+_ATTRIBUTE_PREFIXES: Final[tuple[str, ...]] = (
+    "hajer.",
+    "gen_ai.",
+    "deployment.",
+    "tool.",
+    "session.",
+    "user.",
+    "server.",
+    "error.",
+    "code.",
+)
 #: Where a span names the tool it called, in the order tried: the GenAI semantic convention first, then the SDK's own.
 _TOOL_NAME_KEYS: Final[tuple[str, ...]] = ("gen_ai.tool.name", "tool.name")
 _COMPONENT_ID_KEY: Final[str] = "hajer.component.id"
@@ -222,6 +232,7 @@ def translate(
     hook_report: JsonObject | None,
     filters: Filters,
     settings: HajerSettings,
+    suite_id: str | None = None,
 ) -> EvalRunPayload:
     """One engine document as the upload payload. Raises `pydantic.ValidationError` for a document that is not one."""
     parsed = _Document.model_validate(document)
@@ -237,6 +248,7 @@ def translate(
         engine=_engine(engine, parsed),
         sdk=SdkInfo(version=VERSION),
         git=git,
+        suite_id=suite_id,
         config=ConfigInfo(
             path=config_path,
             description=parsed.config.description if parsed.config is not None else None,
