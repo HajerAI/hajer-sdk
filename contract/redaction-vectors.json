@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared redaction vectors. The expectations are the Python SDK's own output, generated from the Hajer platform's redaction catalog; typescript/test/redact.test.ts and python/tests/test_redact_vectors.py both read this file, so the two clients cannot disagree about what a submission contains without a red test on both sides. The two provider-key classes are deliberately not here: a data file carrying a literal provider-key prefix trips credential scanners. Each client asserts those two against its own inline sample instead.",
+  "$comment": "Shared redaction vectors. The expectations are the Python SDK's own output, generated from the Hajer platform's redaction catalog; python/tests/test_redact_vectors.py reads this file, so the client cannot disagree with the platform about what a submission contains without a red test. The two provider-key classes are deliberately not here: a data file carrying a literal provider-key prefix trips credential scanners. The client asserts those two against its own inline sample instead.",
   "catalog": "redaction-rules@6",
   "positives": [
     {

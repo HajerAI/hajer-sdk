@@ -3,8 +3,6 @@
     python -m hajer attach-path     # the directory to put on PYTHONPATH to attach with no code change
     python -m hajer tail --follow   # one line per observation this team has recorded, as they arrive
     python -m hajer doctor [--json] # what this process's SDK is configured to do, and whether it can
-    python -m hajer upload-results <file> --project-id <id>  # a CI replay's results, uploaded (the install PR's CI)
-    python -m hajer verify-adapters [--project-id <id>]      # does each declared adapter reach its site (fake model)
     python -m hajer proxy --upstream https://api.anthropic.com --listen 127.0.0.1:8091
 
 All four read `HAJER_*` from the environment the way the SDK does, and none takes a credential on the
@@ -52,8 +50,6 @@ from hajer._payload import wire_source
 from hajer._self_check import emit_self_check, self_check
 from hajer._settings import HajerSettings, SettingSource, settings_sources
 from hajer._transport import probe
-from hajer._upload import upload
-from hajer._verify_adapters import REPLAY_CONFIG, results_document, verify_adapters
 
 #: What an absent field prints as. One character, so the columns stay readable when half a page has none.
 _ABSENT = "-"
@@ -230,90 +226,13 @@ def build_parser() -> argparse.ArgumentParser:
     # and it is never *parsed* here: `main` hands everything after the word to `hajer._proxy.main`
     # before argparse sees it, so the proxy's flags have one definition and it is the proxy's own.
     sub.add_parser("proxy", help="Record provider exchanges at the wire (origin BROKER); loopback only")
-    results = sub.add_parser(
-        "upload-results",
-        help="Upload a `pytest --hajer-results` receipt; the only CI step that needs HAJER_API_KEY",
-    )
-    results.add_argument("path", type=Path, help="The receipt `--hajer-results` wrote")
-    results.add_argument("--project-id", required=True, help="Hajer project UUID the results belong to")
-    adapters = sub.add_parser(
-        "verify-adapters",
-        help="Call each `.hajer/replay.toml` adapter once with a fake model; does it reach its declared site?",
-    )
-    adapters.add_argument("--root", type=Path, default=Path(), help="The repository root holding .hajer/replay.toml")
-    adapters.add_argument("--results", type=Path, default=Path(".hajer/adapter-checks.json"), help="Result file")
-    adapters.add_argument("--adapter", action="append", default=[], help="Check only this adapter id (repeatable)")
-    adapters.add_argument("--project-id", default=None, help="Upload the results to this Hajer project")
-    adapters.add_argument(
-        "--temporary-local-executions",
-        type=Path,
-        default=None,
-        help="Private temporary local proof inputs: check each bound case's own input (never uploads)",
-    )
     return parser
-
-
-def upload_results(
-    path: Path, project_id: str, *, settings: HajerSettings, transport: httpx.BaseTransport | None = None
-) -> int:
-    """Upload one replay receipt, exactly as `pytest --hajer-upload` would at session end: 0 when the service stored
-    it, 7 when it could not be read or uploaded (no key, a refused request, a receipt that is not a JSON object)."""
-    try:
-        payload: JsonValue = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        sys.stderr.write(f"hajer upload-results: {path} is not a readable receipt\n")
-        return 7
-    if not isinstance(payload, dict) or not upload(payload, project_id, settings, transport=transport):
-        sys.stderr.write("hajer upload-results: upload unavailable; the receipt is kept in this run\n")
-        return 7
-    sys.stdout.write("hajer upload-results: uploaded\n")
-    return 0
-
-
-def verify_adapters_command(
-    root: Path,
-    results: Path,
-    *,
-    only: list[str],
-    project_id: str | None,
-    settings: HajerSettings,
-    transport: httpx.BaseTransport | None = None,
-    temporary: Path | None = None,
-) -> int:
-    """Check every declared adapter and write the results: 0 once they are written (a status is a finding, not a
-    failure), 2 when `.hajer/replay.toml` cannot be read or the temporary local proof bundle is refused (its fixed
-    code, never its content), 7 when the requested upload did not go through. The temporary bundle never uploads."""
-    if temporary is not None and project_id is not None:
-        sys.stderr.write("hajer verify-adapters: temporary local proof execution cannot upload\n")
-        return 2
-    try:
-        checks = verify_adapters(root.resolve(), settings, only=only, temporary=temporary)
-    except (OSError, ValueError) as error:
-        refusal = str(error) if temporary is not None and isinstance(error, ValueError) else ""
-        if refusal.startswith("TEMPORARY_LOCAL_INPUT_"):
-            sys.stderr.write(f"hajer verify-adapters: {refusal}\n")
-            return 2
-        sys.stderr.write(f"hajer verify-adapters: {REPLAY_CONFIG} is not readable: {type(error).__name__}\n")
-        return 2
-    document = results_document(checks, settings)
-    target = results if results.is_absolute() else root / results
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    for check in checks:
-        sys.stdout.write(f"{check.status:<28} {check.adapter_id}  {check.site or '-'}  {check.detail}\n")
-    if project_id is None or not checks:
-        return 0
-    return 0 if upload(document, project_id, settings, transport=transport) else 7
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments[:1] == ["proxy"]:
         return _proxy.main(arguments[1:])
-    if arguments[:1] == ["verify-controls"]:
-        from hajer import _controls  # noqa: PLC0415 - optional CI runner, not an application runtime dependency
-
-        return _controls.main(arguments[1:])
     options = build_parser().parse_args(arguments)
     if options.command == "attach-path":
         return _attach_path()
@@ -323,17 +242,6 @@ def main(argv: list[str] | None = None) -> int:
             follow=bool(options.follow),
             limit=options.limit,
             settings=HajerSettings.from_env(),
-        )
-    if options.command == "upload-results":
-        return upload_results(options.path, str(options.project_id), settings=HajerSettings.from_env())
-    if options.command == "verify-adapters":
-        return verify_adapters_command(
-            options.root,
-            options.results,
-            only=list(options.adapter),
-            project_id=options.project_id,
-            settings=HajerSettings.from_env(),
-            temporary=options.temporary_local_executions,
         )
     if options.command == "doctor":
         return doctor(as_json=bool(options.json), emit=bool(options.emit), settings=HajerSettings.from_env())

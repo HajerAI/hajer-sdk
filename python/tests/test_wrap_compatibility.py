@@ -11,14 +11,12 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Callable
-from pathlib import Path
 from typing import Protocol, cast
 from unittest import mock
 
 import httpx
 
 import hajer
-from hajer.__main__ import upload_results
 from tests.fakes import FakeAnthropic, FakeChatAnthropic, FakeOpenAI
 
 QUIET = hajer.HajerSettings(capture_content=False)
@@ -157,23 +155,3 @@ class TestMocksAreLeftAlone:
         wrapped.chat.completions.create(model="gpt-fake-1", messages=[])
         client.chat.completions.create.assert_called_once_with(model="gpt-fake-1", messages=[])
         assert hajer.wrapped_calls() == ()
-
-
-class TestUploadResults:
-    def test_a_replay_receipt_is_uploaded_to_the_suite_runs_route_and_failures_are_named(self, tmp_path: Path) -> None:
-        receipt = tmp_path / "results.json"
-        receipt.write_text(json.dumps({"commitSha": "a" * 40, "branch": "b", "mode": "replay", "suites": []}))
-        seen: list[httpx.Request] = []
-
-        def stored(request: httpx.Request) -> httpx.Response:
-            seen.append(request)
-            return httpx.Response(201, json={})
-
-        keyed = hajer.HajerSettings(api_key="k", team_id="team-1")
-        assert upload_results(receipt, "project-1", settings=keyed, transport=httpx.MockTransport(stored)) == 0
-        (request,) = seen
-        assert request.url.path == "/api/teams/team-1/projects/project-1/suite-runs"
-        assert json.loads(request.content)["mode"] == "replay"
-        assert upload_results(receipt, "project-1", settings=hajer.HajerSettings()) == 7  # no key: kept, named
-        receipt.write_text("[]")
-        assert upload_results(receipt, "project-1", settings=keyed, transport=httpx.MockTransport(stored)) == 7

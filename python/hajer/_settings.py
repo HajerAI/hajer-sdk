@@ -52,8 +52,6 @@ REDACT_MAX_STRING_CHARS: Final[int] = 65_536
 #: first, at most 64 characters — the backend's own pattern for `VerifyIn.environment`, so a tag this process sends is
 #: one the service stores. A value outside it is dropped rather than sent: the service would refuse the whole flush.
 ENVIRONMENT_PATTERN: Final[str] = r"^[a-z0-9][a-z0-9-]{0,63}$"
-#: The environment every replay `verify` is tagged with (`hajer.replay`): CI traffic, never a test input.
-CI_ENVIRONMENT: Final[str] = "ci"
 #: What `doctor` prints for a `HAJER_ENVIRONMENT` that was set and dropped.
 ENVIRONMENT_IGNORED: Final[str] = "ignored: invalid"
 
@@ -65,24 +63,6 @@ class HajerSettings(BaseModel):
     """Everything the SDK reads from configuration, validated once, then frozen."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-
-    #: CI suite runs (`hajer.pytest_plugin`). How often a live case repeats is the qualification rule,
-    #: shared with the platform (`pytest_plugin/_qualification.py`), not a setting.
-    ci_case_timeout_seconds: int = Field(default=60, gt=0)
-    #: Optional fixed measurement cap; it never enables extra attempts by itself.
-    ci_fixed_repeat_limit: int = Field(default=20, gt=0)
-    #: A zero ceiling (the default) admits no paid customer-CI request. One ledger is shared by every case/repeat.
-    ci_budget_microusd: int = Field(default=0, ge=0)
-    ci_budget_file: str | None = None
-    ci_input_deadline_ms: int = Field(default=30_000, gt=0)
-    ci_input_max_bytes: int = Field(default=1_048_576, gt=0)
-    #: `python -m hajer verify-adapters`: how many fake model answers each model endpoint serves one adapter's call
-    #: (a workflow that calls the model in a loop gets that many before a further call is refused).
-    adapter_check_answers: int = Field(default=16, gt=0)
-    ci_commit_sha: str | None = None
-    #: The branch a CI run tested: a pull request's head branch, else the pushed branch. Only runs on the
-    #: repository's default branch feed a check's variance-floor baseline on Hajer's side.
-    ci_branch: str | None = None
 
     # ── identity ────────────────────────────────────────────────────────────────────────────────
     #: `HAJER_API_KEY` — a team API key. Absent → inert.
@@ -261,21 +241,6 @@ class HajerSettings(BaseModel):
         """Read the `HAJER_*` variables. `env` is a seam for tests; production passes nothing."""
         source: Mapping[str, str] = os.environ if env is None else env
         return cls(
-            ci_case_timeout_seconds=_positive_int(source, "HAJER_CI_CASE_TIMEOUT_SECONDS", 60),
-            ci_fixed_repeat_limit=_positive_int(source, "HAJER_CI_FIXED_REPEAT_LIMIT", 20),
-            ci_budget_microusd=(
-                0
-                if _string(source, "HAJER_CI_BUDGET_MICROUSD") == "0"
-                else _positive_int(source, "HAJER_CI_BUDGET_MICROUSD", 0)
-            ),
-            ci_budget_file=_string(source, "HAJER_CI_BUDGET_FILE"),
-            ci_input_deadline_ms=_positive_int(source, "HAJER_CI_INPUT_DEADLINE_MS", 30_000),
-            ci_input_max_bytes=_positive_int(source, "HAJER_CI_INPUT_MAX_BYTES", 1_048_576),
-            adapter_check_answers=_positive_int(source, "HAJER_ADAPTER_CHECK_ANSWERS", 16),
-            ci_commit_sha=_string(source, "GITHUB_SHA") or _string(source, "HAJER_CI_COMMIT_SHA"),
-            ci_branch=_string(source, "GITHUB_HEAD_REF")
-            or _string(source, "GITHUB_REF_NAME")
-            or _string(source, "HAJER_CI_BRANCH"),
             api_key=_string(source, "HAJER_API_KEY"),
             team_id=_string(source, "HAJER_TEAM_ID"),
             base_url=_string(source, "HAJER_BASE_URL") or DEFAULT_BASE_URL,
@@ -312,15 +277,6 @@ class HajerSettings(BaseModel):
 #: table, so `from_env` and `python -m hajer doctor` cannot disagree about which variable feeds which
 #: field; `tests/test_settings.py::test_every_setting_has_a_variable` holds them to it.
 VARIABLES: Final[tuple[tuple[str, str], ...]] = (
-    ("ci_case_timeout_seconds", "HAJER_CI_CASE_TIMEOUT_SECONDS"),
-    ("ci_fixed_repeat_limit", "HAJER_CI_FIXED_REPEAT_LIMIT"),
-    ("ci_budget_microusd", "HAJER_CI_BUDGET_MICROUSD"),
-    ("ci_budget_file", "HAJER_CI_BUDGET_FILE"),
-    ("ci_input_deadline_ms", "HAJER_CI_INPUT_DEADLINE_MS"),
-    ("ci_input_max_bytes", "HAJER_CI_INPUT_MAX_BYTES"),
-    ("adapter_check_answers", "HAJER_ADAPTER_CHECK_ANSWERS"),
-    ("ci_commit_sha", "HAJER_CI_COMMIT_SHA"),
-    ("ci_branch", "HAJER_CI_BRANCH"),
     ("api_key", "HAJER_API_KEY"),
     ("team_id", "HAJER_TEAM_ID"),
     ("base_url", "HAJER_BASE_URL"),
@@ -381,62 +337,6 @@ class SettingSource:
     variable: str
     value: str
     source: str
-
-
-def ci_child_environment(settings: HajerSettings | None = None) -> dict[str, str]:
-    """The environment for a CI suite's application process: this one's, with `HAJER_ENVIRONMENT` set to `ci`.
-
-    Traffic tagged CI_ENVIRONMENT is never selected as a test input, so the application a suite runs cannot feed the
-    next suite, whatever `HAJER_ENVIRONMENT` the customer's CI exports.
-    """
-    # The parent needs the Hajer credential for advisory grading and uploads. The customer's app does not.
-    environment = {key: value for key, value in os.environ.items() if key != "HAJER_API_KEY"}
-    environment["HAJER_ENVIRONMENT"] = CI_ENVIRONMENT
-    if settings is not None:
-        environment["HAJER_CI_BUDGET_MICROUSD"] = (
-            str(settings.ci_budget_microusd) if settings.ci_budget_microusd else ""
-        )
-        environment["HAJER_CI_BUDGET_FILE"] = settings.ci_budget_file or ""
-    return environment
-
-
-#: What one free-text field of a CI upload may hold: the backend's `CI_MAX_REASON` (an adapter check's `detail`, a
-#: check's `reason`, an id). A longer string would reject the whole run's upload, so every one is clipped to it.
-CI_TEXT_MAX: Final[int] = 256
-
-
-def clipped(text: str) -> str:
-    """`text` cut to what a CI upload's free-text field holds (`CI_TEXT_MAX`)."""
-    return text if len(text) <= CI_TEXT_MAX else text[: CI_TEXT_MAX - 1] + "…"
-
-
-#: The provider keys a client needs to be constructed. `verify-adapters` sets a placeholder where the environment has
-#: none: its model is fake and nothing leaves the process, but a client that refuses to start without a key would
-#: stop the call before it reaches any site.
-_PLACEHOLDER_KEYS: Final[tuple[str, ...]] = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY")
-
-
-def adapter_check_environment(declared: Mapping[str, str]) -> dict[str, str]:
-    """The environment `verify-adapters` runs an adapter in: the CI child's, the `.hajer/replay.toml` `[environment]`
-    literals, and a placeholder for a provider key the environment does not hold."""
-    return ci_execution_environment(declared, live=False)
-
-
-def ci_execution_environment(
-    declared: Mapping[str, str], *, live: bool, settings: HajerSettings | None = None
-) -> dict[str, str]:
-    """Use the same declared app configuration in reachability checks and execution.
-
-    Replay may construct clients using inert placeholders; live execution never invents
-    provider credentials. Repository literals cannot override Hajer's budget or transport.
-    """
-    environment = ci_child_environment(settings)
-    if not live:
-        for name in _PLACEHOLDER_KEYS:
-            if not environment.get(name):
-                environment[name] = "hajer-verify-adapters-no-key"
-    environment.update({key: value for key, value in declared.items() if not key.startswith("HAJER_")})
-    return environment
 
 
 def settings_sources(settings: HajerSettings, env: Mapping[str, str] | None = None) -> tuple[SettingSource, ...]:

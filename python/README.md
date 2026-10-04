@@ -15,7 +15,6 @@ pip install hajer                  # httpx + pydantic, nothing else
 pip install "hajer[openai]"        # with the OpenAI SDK alongside
 pip install "hajer[anthropic]"     # with the Anthropic SDK alongside
 pip install "hajer[otel]"          # optional coexistence with an existing OpenTelemetry setup
-pip install "hajer[ci]"            # the pytest plugin that runs Hajer suites in CI
 ```
 
 The `openai` and `anthropic` extras are a convenience: the SDK never imports either library.
@@ -162,9 +161,6 @@ can be captured by wrapping that client's transport in `hajer.CaptureTransport`.
 - [Reference](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/reference.md) — the public
   API, the `verify` reason table, the `observe` delivery contract, idempotency and case keys, what
   `wrap` captures, streaming, redaction, attach mode, the command line, every setting, costs and errors.
-- [CI suites](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/ci.md) — the pytest plugin
-  that runs Hajer suites in your CI, and the
-  [GitHub Action](https://github.com/HajerAI/hajer-sdk/blob/main/action/README.md) that wraps it.
 - [Local platform](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/local-platform.md) —
   pointing the SDK at a local or self-hosted Hajer platform, and a first `verify` you can run as written.
 - [Development](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/development.md) — working

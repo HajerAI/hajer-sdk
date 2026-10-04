@@ -2,22 +2,17 @@
 
 openai 3.x and anthropic 1.x send through `httpx2`, httpx's fork: the same surface under its own classes, so an
 `httpx2.Request` is not an `httpx.Request` and a patch on `httpx.HTTPTransport` never sees it. Every seam that
-patches or recognises httpx does the same, with the same semantics, to each library `libraries()` names: the replay
-guard (`replay/_hooks.py`, `replay/_guard.py`), `HAJER_CAPTURE_HTTP` and `CaptureTransport` (`_http_capture.py`), and
-`record_boundaries` (`_boundary.py`).
+patches or recognises httpx does the same, with the same semantics, to each library `libraries()` names:
+`HAJER_CAPTURE_HTTP` and `CaptureTransport` (`_http_capture.py`), and `record_boundaries` (`_boundary.py`).
 
 The SDK depends on httpx alone: httpx2 is not a dependency and is never imported by name. It is
 imported here when the interpreter has it installed, so a seam is in place before the application's first request,
-and not at all when it is absent. In a guarded child (`replay/_hooks.install`) that import happens after the audit
-hook is added, so httpx2's import-time code runs under it. An httpx2 that is installed but fails to import is said
-once, on the `hajer` logger, and then left out: nothing can send through it, so a guarded child refuses such a
-request at the socket, and capture and `record_boundaries` do not see it.
+and not at all when it is absent. An httpx2 that is installed but fails to import is said once, on the `hajer`
+logger, and then left out: nothing can send through it, so capture and `record_boundaries` do not see it.
 
 `httpx2.alias_httpx()` makes `import httpx` answer with httpx2, and it must run before anything imports httpx. The SDK
 imports httpx itself, so an application gets one library only by aliasing before its first `import hajer`; then
-`libraries()` names it once. In a guarded child the SDK has imported httpx before any application code runs, so
-`alias_httpx()` raises there (httpx2's own `RuntimeError`), and the application's httpx and httpx2 are two libraries,
-each guarded.
+`libraries()` names it once.
 
 The fork's classes are typed as httpx's, cast in `_fork` and nowhere else: every attribute the SDK reads is spelled
 the same in both, and every object the SDK builds for a request is built from that request's own library.
@@ -51,10 +46,8 @@ class HttpLibrary:
     async_client: type[httpx.AsyncClient]
     request: type[httpx.Request]
     response: type[httpx.Response]
-    byte_stream: type[httpx.ByteStream]
     sync_byte_stream: type[httpx.SyncByteStream]
     async_byte_stream: type[httpx.AsyncByteStream]
-    connect_error: type[httpx.ConnectError]
     request_not_read: type[httpx.RequestNotRead]
 
 
@@ -66,10 +59,8 @@ HTTPX: Final = HttpLibrary(
     async_client=httpx.AsyncClient,
     request=httpx.Request,
     response=httpx.Response,
-    byte_stream=httpx.ByteStream,
     sync_byte_stream=httpx.SyncByteStream,
     async_byte_stream=httpx.AsyncByteStream,
-    connect_error=httpx.ConnectError,
     request_not_read=httpx.RequestNotRead,
 )
 
@@ -84,10 +75,8 @@ def _fork(module: ModuleType) -> HttpLibrary:
         async_client=cast(type[httpx.AsyncClient], module.AsyncClient),
         request=cast(type[httpx.Request], module.Request),
         response=cast(type[httpx.Response], module.Response),
-        byte_stream=cast(type[httpx.ByteStream], module.ByteStream),
         sync_byte_stream=cast(type[httpx.SyncByteStream], module.SyncByteStream),
         async_byte_stream=cast(type[httpx.AsyncByteStream], module.AsyncByteStream),
-        connect_error=cast(type[httpx.ConnectError], module.ConnectError),
         request_not_read=cast(type[httpx.RequestNotRead], module.RequestNotRead),
     )
 
@@ -104,8 +93,8 @@ def libraries() -> tuple[HttpLibrary, ...]:
         return (HTTPX, _fork(module))
     except Exception as error:  # noqa: BLE001 - an httpx2 that cannot be imported is one nothing can send through either
         _LOG.warning(
-            "hajer: %s is installed but could not be imported (%s), so it is left unpatched: a replay refuses a request "
-            "through it at the socket, and HTTP capture and record_boundaries do not see it",
+            "hajer: %s is installed but could not be imported (%s), so it is left unpatched: HTTP capture and "
+            "record_boundaries do not see a request through it",
             FORK,
             type(error).__name__,
         )

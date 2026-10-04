@@ -20,7 +20,7 @@ Python ≥ 3.11 · uv · httpx · pydantic v2. Runtime dependencies are **httpx 
 else**; `openai` and `anthropic` are optional extras the SDK never imports (ruff bans importing
 them). A third runtime dependency is a decision, not an edit. `httpx2`, the httpx fork openai 3.x and
 anthropic 1.x send through, is not one: `_http_libraries.py` imports it when the interpreter has it,
-and every seam that patches or recognises httpx (the replay guard, HTTP capture, `record_boundaries`)
+and every seam that patches or recognises httpx (HTTP capture, `record_boundaries`)
 does the same to it.
 
 ## Why this package is small on purpose
@@ -38,13 +38,13 @@ smallest one that does the job. Two consequences that shape everything below:
 
 ## Layout: one concern per module, all private but `__init__`
 
-The core modules (not an exhaustive list — capture, CI and replay have their own):
+The core modules (not an exhaustive list — capture has its own):
 
 ```
 hajer/
 ├── __init__.py      the public API and nothing else — __all__ is the contract
 ├── autoattach.py    public, no underscore: `import hajer.autoattach` is the one-line attach hook
-├── __main__.py      `python -m hajer` — doctor, tail, proxy, attach-path, upload-results, verify-adapters
+├── __main__.py      `python -m hajer` — doctor, tail, proxy, attach-path
 ├── _bootstrap/      sitecustomize.py — the same hook, where the interpreter finds it on PYTHONPATH
 ├── _settings.py     HajerSettings; the ONLY reader of the process environment
 ├── _errors.py       every exception, and why each one is allowed to exist
@@ -60,9 +60,7 @@ hajer/
 ├── _redact.py       the client-side redaction walk, its budgets and the policy
 ├── _rules.py        GENERATED from the platform's redaction catalog — never hand-edited
 ├── _checksums.py    GENERATED alongside _rules.py — never hand-edited
-├── _wire.py         GENERATED from ../contract/openapi.json — never hand-edited
-├── pytest_plugin/   the CI suites plugin (`hajer[ci]`)
-└── replay/          the guarded child process a CI case runs in
+└── _wire.py         GENERATED from ../contract/openapi.json — never hand-edited
 ```
 
 Everything but `__init__.py`, `autoattach.py` and `__main__.py` is private (leading underscore). A name
@@ -88,22 +86,12 @@ keeps the seam that runs inside every provider call free of the client that send
   by attribute on the object it is handed.
 - **Every bound is a setting.** No numeric limit is spelled as a literal outside `_settings.py`.
   A new bound is a `HajerSettings` field, a `HAJER_*` variable, a row in the settings table in
-  `docs/reference.md` (or `docs/ci.md` for a CI-only setting), and a default the docs explain.
+  `docs/reference.md`, and a default the docs explain.
 - **No network in tests.** The transport seam is `httpx.MockTransport` and the providers are fakes in
   `tests/fakes.py`. A test that would open a socket is a test that does not belong here — with one
-  exception, on loopback only, and marked: every test that opens a socket carries
-  `@pytest.mark.loopback` (registered in `pyproject.toml`; `just test -m "not loopback"` leaves them out),
-  binds only `127.0.0.1` (the Unix-socket diversion binds a socket file in a private `/tmp` directory),
-  and its socket fixtures fail a test without the marker. All of them are in `tests/test_http_libraries.py`,
-  because what they claim only a socket can show:
-  - `test_a_live_run_reaches_the_declared_provider_over_a_real_socket` and
-    `test_a_live_send_to_the_provider_is_logged_where_it_connected` — a live run's provider bytes leave
-    through the application's own transport, to the provider, and the log names where they went;
-  - `test_every_other_host_is_refused_before_a_byte_leaves` — a listening host that is not the provider
-    receives nothing, live or replay;
-  - `test_a_live_send_to_the_provider_carried_anywhere_else_is_refused_before_a_byte_leaves` — a request
-    addressed to the provider that a proxy (environment or client), a Unix socket, a transport's own pool
-    or a rebound name would carry elsewhere reaches no listener.
+  exception, on loopback only, and marked: a test that can only make its claim with a socket carries
+  `@pytest.mark.loopback` (registered in `pyproject.toml`; `just test -m "not loopback"` leaves them out)
+  and binds only `127.0.0.1`. No current test needs it; the marker stays so the rule has a spelling.
 
 ## Conventions
 
@@ -126,7 +114,7 @@ keeps the seam that runs inside every provider call free of the client that send
 ## The contract chain
 
 `../contract/` holds files vendored from the Hajer platform: its OpenAPI snapshot and the shared test
-vectors (case keys, redaction, qualification, and others). They are not edited in this repository;
+vectors (case keys, redaction, and others). They are not edited in this repository;
 they change when the platform re-vendors them. The SDK generates its wire types from the snapshot:
 
 ```

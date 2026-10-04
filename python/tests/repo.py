@@ -17,7 +17,6 @@ import pytest
 
 SDK_REPOSITORY: Final[Path] = Path(__file__).resolve().parents[2]
 CONTRACT: Final[Path] = SDK_REPOSITORY / "contract"
-ACTION: Final[Path] = SDK_REPOSITORY / "action"
 
 _PARENT = SDK_REPOSITORY.parent
 #: The platform checkout this SDK is mounted in, or None when it stands alone.

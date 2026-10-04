@@ -17,7 +17,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Framework :: Pytest",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
@@ -55,13 +54,9 @@ Issues = "https://github.com/HajerAI/hajer-sdk/issues"
 Changelog = "https://github.com/HajerAI/hajer-sdk/blob/main/python/CHANGELOG.md"
 
 [project.optional-dependencies]
-ci = ["pytest>=9.1.1"]
 openai = ["openai>=3.13.0"]
 anthropic = ["anthropic>=0.75.0"]
 otel = ["opentelemetry-sdk>=1.37.0"]
-
-[project.entry-points.pytest11]
-"hajer.pytest_plugin" = "hajer.pytest_plugin"
 
 [build-system]
 requires = ["uv_build>=0.9.7,<0.13.0"]
@@ -212,9 +207,6 @@ ignore_names = [
     # through the subscript syntax. Both are protocol names no line of ours mentions, which is
     # the same category as the two above.
     "pytest_addoption",
-    # pytest calls Item.runtest and reads Session.exitstatus externally.
-    "runtest",
-    "exitstatus",
     "__getitem__",
     # `isinstance` reads `__class__` and the subscript syntax calls `__getitem__`; neither is a name
     # any line of ours writes, which is what a protocol name is.
@@ -222,4 +214,7 @@ ignore_names = [
     # OpenTelemetry's `SpanProcessor` protocol: the `TracerProvider` calls these on every span and flush.
     "on_start",
     "force_flush",
+    # `_redact._RulesSpec.version` is a contract field: pydantic validates it is the literal `1` and nothing
+    # reads it afterwards, which is the whole point of a version pin and exactly what vulture cannot see.
+    "version",
 ]
