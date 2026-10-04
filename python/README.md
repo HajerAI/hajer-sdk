@@ -14,7 +14,8 @@ an assessment is read beside the calls that produced the output.
 pip install hajer                  # httpx + pydantic, nothing else
 pip install "hajer[openai]"        # with the OpenAI SDK alongside
 pip install "hajer[anthropic]"     # with the Anthropic SDK alongside
-pip install "hajer[otel]"          # optional coexistence with an existing OpenTelemetry setup
+pip install "hajer[otel]"          # the span emitter, and coexistence with an existing OpenTelemetry setup
+pip install "hajer[evals]"         # `hajer eval`: run promptfoo suites on the pinned engine (Node >= 22.22 on PATH)
 ```
 
 The `openai` and `anthropic` extras are a convenience: the SDK never imports either library.
@@ -139,13 +140,15 @@ process. `hajer.build_policy(...)` adjusts it per client or per call.
 ## Command line
 
 ```bash
-python -m hajer doctor           # every HAJER_* setting in force, where it came from, and whether the service answers
-python -m hajer tail --follow    # one line per recorded observation as it lands
-python -m hajer proxy --upstream https://api.anthropic.com --listen 127.0.0.1:8091   # record at the wire
-python -m hajer attach-path      # the directory to put on PYTHONPATH for attach mode
+hajer doctor           # every HAJER_* setting in force, where it came from, and whether the service answers
+hajer tail --follow    # one line per recorded observation as it lands
+hajer proxy --upstream https://api.anthropic.com --listen 127.0.0.1:8091   # record at the wire
+hajer attach-path      # the directory to put on PYTHONPATH for attach mode
+hajer eval             # run the promptfoo suite in this directory on the pinned engine (docs/evals.md)
 ```
 
-`doctor` is the first command to run when nothing is arriving. It never prints your key.
+`hajer` is a console script; `python -m hajer` is the same program. `doctor` is the first command to run when
+nothing is arriving. It never prints your key.
 
 ## Supported libraries
 
@@ -161,6 +164,9 @@ can be captured by wrapping that client's transport in `hajer.CaptureTransport`.
 - [Reference](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/reference.md) — the public
   API, the `verify` reason table, the `observe` delivery contract, idempotency and case keys, what
   `wrap` captures, streaming, redaction, attach mode, the command line, every setting, costs and errors.
+- [Evals](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/evals.md) — `hajer eval`: ordinary
+  promptfoo suites, connected to the workflows, obligations, traces and commits the rest of Hajer sees; and the
+  [engine pin](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/evals-engine.md) behind it.
 - [Local platform](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/local-platform.md) —
   pointing the SDK at a local or self-hosted Hajer platform, and a first `verify` you can run as written.
 - [Development](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/development.md) — working

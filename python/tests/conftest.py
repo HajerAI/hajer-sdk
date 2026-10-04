@@ -198,6 +198,32 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Rewrite contract/sdk-capture/export.json from the owned outreach app.",
     )
+    parser.addoption(
+        "--engine",
+        action="store_true",
+        default=False,
+        help="Run the tests marked `engine`: the pinned eval engine on Node, installed from npm on first use.",
+    )
+    parser.addoption(
+        "--update-evals-golden",
+        action="store_true",
+        default=False,
+        help="Rewrite tests/fixtures/evals/results.golden.json from a real engine run (implies --engine).",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`engine` tests run only on request: they need Node and, once, the npm registry (CLAUDE.md, "no network").
+
+    Skipping on a missing Node would silently reach the network wherever Node happens to be installed — every
+    CI runner — so the opt-in is explicit rather than detected.
+    """
+    if config.getoption("--engine") or config.getoption("--update-evals-golden"):
+        return
+    skip = pytest.mark.skip(reason="needs the eval engine; run with `pytest --engine`")
+    for item in items:
+        if "engine" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture

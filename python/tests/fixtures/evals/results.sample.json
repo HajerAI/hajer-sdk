@@ -1,0 +1,193 @@
+{
+  "evalId": "eval-sample-0001",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-10-04T10:00:00.000Z",
+    "stats": {
+      "successes": 1,
+      "failures": 1,
+      "errors": 1,
+      "tokenUsage": { "prompt": 120, "completion": 60, "total": 180, "cached": 0, "numRequests": 3 },
+      "durationMs": 2450
+    },
+    "prompts": [
+      { "raw": "{{question}}", "label": "answer", "provider": "python:provider.py" }
+    ],
+    "results": [
+      {
+        "success": true,
+        "score": 1,
+        "failureReason": 0,
+        "latencyMs": 812,
+        "cost": 0.0012,
+        "tokenUsage": { "prompt": 40, "completion": 20, "total": 60, "cached": 0 },
+        "testIdx": 0,
+        "promptIdx": 0,
+        "provider": { "id": "python:provider.py", "label": "support-agent" },
+        "prompt": { "raw": "{{question}}", "label": "answer" },
+        "response": { "output": "Your refund of $42.00 will arrive in 3-5 business days." },
+        "vars": { "question": "Where is my refund?" },
+        "metadata": {
+          "suite": "refunds",
+          "hajer": {
+            "workflowId": "refund-flow",
+            "obligationIds": ["refund-window"],
+            "componentIds": ["refund-agent"],
+            "sourceTraceIds": ["trace-prod-9f1"],
+            "generatedBy": "platform",
+            "provenance": { "kind": "recorded", "observationId": "obs-77" }
+          }
+        },
+        "testCase": {
+          "description": "Refund window is stated",
+          "vars": { "question": "Where is my refund?" },
+          "assert": [{ "type": "contains", "value": "business days" }]
+        },
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Output contains \"business days\"",
+              "assertion": { "type": "contains", "value": "business days" }
+            }
+          ]
+        },
+        "traceId": "trace-0001",
+        "evaluationId": "eval-sample-0001"
+      },
+      {
+        "success": false,
+        "score": 0.25,
+        "failureReason": 1,
+        "error": "Assertion failed: Response does not stay in scope",
+        "latencyMs": 1203,
+        "testIdx": 1,
+        "promptIdx": 0,
+        "provider": { "id": "python:provider.py", "label": "support-agent" },
+        "prompt": { "raw": "{{question}}", "label": "answer" },
+        "response": { "output": "I cannot help with that, but here is a joke." },
+        "vars": { "question": "Tell me a joke" },
+        "metadata": {
+          "testCaseId": "case-scope-01",
+          "hajer": { "workflowId": "refund-flow", "obligationIds": ["stay-in-scope"] }
+        },
+        "testCase": {
+          "description": "Stays within the refund scope",
+          "vars": { "question": "Tell me a joke" },
+          "assert": [
+            {
+              "type": "llm-rubric",
+              "value": "Declines off-topic requests without adding content",
+              "metric": "scope",
+              "weight": 2
+            }
+          ]
+        },
+        "gradingResult": {
+          "pass": false,
+          "score": 0.25,
+          "reason": "Response does not stay in scope",
+          "componentResults": [
+            {
+              "pass": false,
+              "score": 0.25,
+              "reason": "The response declines but then adds a joke",
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "Declines off-topic requests without adding content",
+                "metric": "scope",
+                "weight": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "success": false,
+        "score": 0,
+        "failureReason": 2,
+        "error": "Provider timed out after 30000ms",
+        "latencyMs": 30000,
+        "testIdx": 2,
+        "promptIdx": 0,
+        "provider": { "id": "python:provider.py" },
+        "prompt": { "raw": "{{question}}" },
+        "vars": { "question": "What is the refund policy?" },
+        "metadata": {},
+        "testCase": { "vars": { "question": "What is the refund policy?" } }
+      }
+    ]
+  },
+  "config": {
+    "description": "Refund support suite",
+    "providers": ["file://provider.py"],
+    "prompts": ["{{question}}"]
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.123.1",
+    "nodeVersion": "v22.22.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "exportedAt": "2026-10-04T10:00:03.000Z"
+  },
+  "traces": [
+    {
+      "traceId": "trace-0001",
+      "evaluationId": "eval-sample-0001",
+      "testCaseId": "case-refund-window-01",
+      "metadata": { "testIdx": 0, "promptIdx": 0, "providerId": "python:provider.py" },
+      "spans": [
+        {
+          "spanId": "s1",
+          "name": "refund-flow",
+          "startTime": 1000.25,
+          "endTime": 1800.75,
+          "attributes": {
+            "hajer.workflow.id": "refund-flow",
+            "hajer.eval.run_id": "run-sample",
+            "deployment.environment": "eval",
+            "http.method": "POST"
+          },
+          "statusCode": "ok"
+        },
+        {
+          "spanId": "s2",
+          "parentSpanId": "s1",
+          "name": "refund-agent",
+          "startTime": 1050,
+          "endTime": 1700,
+          "attributes": {
+            "hajer.component.id": "refund-agent",
+            "gen_ai.system": "openai",
+            "gen_ai.request.model": "gpt-4o-mini"
+          },
+          "statusCode": "ok"
+        },
+        {
+          "spanId": "s4",
+          "parentSpanId": "s2",
+          "name": "issue_refund",
+          "startTime": 1350,
+          "endTime": 1650,
+          "attributes": { "tool.name": "issue_refund", "tool.call.args": "{\"orderId\":\"o-1\"}" },
+          "statusCode": "error",
+          "statusMessage": "refund already issued"
+        },
+        {
+          "spanId": "s3",
+          "parentSpanId": "s2",
+          "name": "lookup_order",
+          "startTime": 1100,
+          "endTime": 1300,
+          "attributes": { "gen_ai.tool.name": "lookup_order", "tool.name": "lookup_order" },
+          "statusCode": "ok"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1677 @@
+{
+  "evalId": "eval-z8v-2026-10-04T01:54:37",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-10-04T01:54:37.565Z",
+    "prompts": [
+      {
+        "raw": "{{message}}",
+        "label": "{{message}}",
+        "id": "21e536caf6f2870857967c9a82beb9093b792433e6d1deef3661148f3e61785b",
+        "provider": "Support agent",
+        "metrics": {
+          "score": 4,
+          "testPassCount": 4,
+          "testFailCount": 0,
+          "testErrorCount": 0,
+          "assertPassCount": 10,
+          "assertFailCount": 0,
+          "totalLatencyMs": 874,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 4,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 2,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "namedScores": {},
+          "namedScoresCount": {},
+          "namedScoreWeights": {},
+          "cost": 0
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "pending"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status",
+              "assertion": {
+                "type": "trajectory:tool-used",
+                "value": "get_refund_status"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Found 1 spans matching pattern \"workflow *\" (expected at least 1). Matched spans: workflow wf_support",
+              "assertion": {
+                "type": "trace-span-count",
+                "value": {
+                  "pattern": "workflow *",
+                  "min": 1
+                }
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "must not say: has completed, is complete, was refunded",
+                "provider": "file://grader.py"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "none of the forbidden phrases appears in the output",
+              "tokensUsed": {
+                "total": 0,
+                "prompt": 0,
+                "completion": 0,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "RUBRIC: must not say: has completed, is complete, was refunded\nOUTPUT: Your refund is still pending: it has been approved but has not completed yet."
+              }
+            }
+          ]
+        },
+        "id": "ae241769-645c-419f-aff3-3321f5f39512",
+        "latencyMs": 226,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Has my refund gone through?",
+          "label": "{{message}}",
+          "config": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "promptId": "21e536caf6f2870857967c9a82beb9093b792433e6d1deef3661148f3e61785b",
+        "promptIdx": 0,
+        "traceId": "96c3784251d57d5f2a9409db613ff234",
+        "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+        "provider": {
+          "id": "file://provider.py",
+          "label": "Support agent"
+        },
+        "response": {
+          "output": "Your refund is still pending: it has been approved but has not completed yet.",
+          "cached": false,
+          "metadata": {}
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "Pending refund is reported as pending",
+          "metadata": {
+            "hajer": {
+              "workflowId": "wf_support",
+              "obligationIds": [
+                "obl_refund_status_disclosed"
+              ],
+              "componentIds": [
+                "cmp_refund_agent"
+              ]
+            },
+            "testCaseId": "eval_refund_pending",
+            "tracingEnabled": true,
+            "evaluationId": "eval-z8v-2026-10-04T01:54:37"
+          },
+          "vars": {
+            "message": "Has my refund gone through?",
+            "customer_id": "cust_123"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "pending"
+            },
+            {
+              "type": "trajectory:tool-used",
+              "value": "get_refund_status"
+            },
+            {
+              "type": "trace-span-count",
+              "value": {
+                "pattern": "workflow *",
+                "min": 1
+              }
+            },
+            {
+              "type": "llm-rubric",
+              "value": "must not say: has completed, is complete, was refunded",
+              "provider": "file://grader.py"
+            }
+          ],
+          "options": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "testIdx": 0,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "message": "Has my refund gone through?",
+          "customer_id": "cust_123"
+        },
+        "metadata": {
+          "hajer": {
+            "workflowId": "wf_support",
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ],
+            "componentIds": [
+              "cmp_refund_agent"
+            ]
+          },
+          "testCaseId": "eval_refund_pending",
+          "tracingEnabled": true,
+          "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "completed"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status",
+              "assertion": {
+                "type": "trajectory:tool-used",
+                "value": "get_refund_status"
+              }
+            },
+            {
+              "assertion": {
+                "type": "llm-rubric",
+                "value": "must not say: pending, cannot find",
+                "provider": "file://grader.py"
+              },
+              "pass": true,
+              "score": 1,
+              "reason": "none of the forbidden phrases appears in the output",
+              "tokensUsed": {
+                "total": 0,
+                "prompt": 0,
+                "completion": 0,
+                "cached": 0,
+                "numRequests": 0,
+                "completionDetails": {
+                  "reasoning": 0,
+                  "acceptedPrediction": 0,
+                  "rejectedPrediction": 0
+                }
+              },
+              "metadata": {
+                "renderedGradingPrompt": "RUBRIC: must not say: pending, cannot find\nOUTPUT: Your refund has completed; the amount is back with your payment provider."
+              }
+            }
+          ]
+        },
+        "id": "09ee1355-cf31-4cb6-b8af-41081052ad77",
+        "latencyMs": 206,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Did my refund finish processing?",
+          "label": "{{message}}",
+          "config": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "promptId": "21e536caf6f2870857967c9a82beb9093b792433e6d1deef3661148f3e61785b",
+        "promptIdx": 0,
+        "traceId": "53eb61671d9c277a5fcdd623fd00b37e",
+        "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+        "provider": {
+          "id": "file://provider.py",
+          "label": "Support agent"
+        },
+        "response": {
+          "output": "Your refund has completed; the amount is back with your payment provider.",
+          "cached": false,
+          "metadata": {}
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "Completed refund is reported accurately",
+          "metadata": {
+            "hajer": {
+              "workflowId": "wf_support",
+              "obligationIds": [
+                "obl_refund_status_disclosed"
+              ],
+              "componentIds": [
+                "cmp_refund_agent"
+              ]
+            },
+            "testCaseId": "eval_refund_completed",
+            "tracingEnabled": true,
+            "evaluationId": "eval-z8v-2026-10-04T01:54:37"
+          },
+          "vars": {
+            "message": "Did my refund finish processing?",
+            "customer_id": "cust_456"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "completed"
+            },
+            {
+              "type": "trajectory:tool-used",
+              "value": "get_refund_status"
+            },
+            {
+              "type": "llm-rubric",
+              "value": "must not say: pending, cannot find",
+              "provider": "file://grader.py"
+            }
+          ],
+          "options": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "testIdx": 1,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "message": "Did my refund finish processing?",
+          "customer_id": "cust_456"
+        },
+        "metadata": {
+          "hajer": {
+            "workflowId": "wf_support",
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ],
+            "componentIds": [
+              "cmp_refund_agent"
+            ]
+          },
+          "testCaseId": "eval_refund_completed",
+          "tracingEnabled": true,
+          "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "cannot find"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status",
+              "assertion": {
+                "type": "trajectory:tool-used",
+                "value": "get_refund_status"
+              }
+            }
+          ]
+        },
+        "id": "71bdc229-a9dd-4522-a3bf-6b0e073efa6c",
+        "latencyMs": 214,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Where is my refund?",
+          "label": "{{message}}",
+          "config": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "promptId": "21e536caf6f2870857967c9a82beb9093b792433e6d1deef3661148f3e61785b",
+        "promptIdx": 0,
+        "traceId": "b9d8477822fd950a906f641626e93728",
+        "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+        "provider": {
+          "id": "file://provider.py",
+          "label": "Support agent"
+        },
+        "response": {
+          "output": "I cannot find a refund for this account; please check the order number.",
+          "cached": false,
+          "metadata": {}
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "An unknown account is told so, not guessed at",
+          "metadata": {
+            "hajer": {
+              "workflowId": "wf_support",
+              "obligationIds": [
+                "obl_refund_status_disclosed"
+              ]
+            },
+            "tracingEnabled": true,
+            "evaluationId": "eval-z8v-2026-10-04T01:54:37"
+          },
+          "vars": {
+            "message": "Where is my refund?",
+            "customer_id": "cust_999"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "cannot find"
+            },
+            {
+              "type": "trajectory:tool-used",
+              "value": "get_refund_status"
+            }
+          ],
+          "options": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "testIdx": 2,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "message": "Where is my refund?",
+          "customer_id": "cust_999"
+        },
+        "metadata": {
+          "hajer": {
+            "workflowId": "wf_support",
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ]
+          },
+          "tracingEnabled": true,
+          "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "refund"
+              }
+            }
+          ]
+        },
+        "id": "019c9e14-9179-442f-9672-b62012720769",
+        "latencyMs": 228,
+        "namedScores": {},
+        "prompt": {
+          "raw": "Hello there",
+          "label": "{{message}}",
+          "config": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "promptId": "21e536caf6f2870857967c9a82beb9093b792433e6d1deef3661148f3e61785b",
+        "promptIdx": 0,
+        "traceId": "57d8ce9ff8a7bd0297378e7089d8d5cc",
+        "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+        "provider": {
+          "id": "file://provider.py",
+          "label": "Support agent"
+        },
+        "response": {
+          "output": "I can help with refund questions; tell me about your order.",
+          "cached": false,
+          "metadata": {}
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "A greeting, with only a testCaseId",
+          "metadata": {
+            "hajer": {
+              "workflowId": "wf_support"
+            },
+            "testCaseId": "eval_greeting",
+            "tracingEnabled": true,
+            "evaluationId": "eval-z8v-2026-10-04T01:54:37"
+          },
+          "vars": {
+            "message": "Hello there",
+            "customer_id": "cust_123"
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "refund"
+            }
+          ],
+          "options": {
+            "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+          }
+        },
+        "testIdx": 3,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "message": "Hello there",
+          "customer_id": "cust_123"
+        },
+        "metadata": {
+          "hajer": {
+            "workflowId": "wf_support"
+          },
+          "testCaseId": "eval_greeting",
+          "tracingEnabled": true,
+          "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 4,
+      "failures": 0,
+      "errors": 0,
+      "tokenUsage": {
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "total": 0,
+        "numRequests": 4,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        },
+        "assertions": {
+          "total": 0,
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "numRequests": 2,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          }
+        }
+      },
+      "durationMs": 3923,
+      "evaluationDurationMs": 3923
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "Customer support regression suite (hajer example), ",
+    "prompts": [
+      "{{message}}"
+    ],
+    "providers": [
+      {
+        "id": "file://provider.py",
+        "label": "Support agent"
+      }
+    ],
+    "tests": [
+      {
+        "description": "Pending refund is reported as pending",
+        "metadata": {
+          "testCaseId": "eval_refund_pending",
+          "hajer": {
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ],
+            "componentIds": [
+              "cmp_refund_agent"
+            ]
+          }
+        },
+        "vars": {
+          "message": "Has my refund gone through?",
+          "customer_id": "cust_123"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "pending"
+          },
+          {
+            "type": "trajectory:tool-used",
+            "value": "get_refund_status"
+          },
+          {
+            "type": "trace-span-count",
+            "value": {
+              "pattern": "workflow *",
+              "min": 1
+            }
+          },
+          {
+            "type": "llm-rubric",
+            "value": "must not say: has completed, is complete, was refunded",
+            "provider": "file://grader.py"
+          }
+        ]
+      },
+      {
+        "description": "Completed refund is reported accurately",
+        "metadata": {
+          "testCaseId": "eval_refund_completed",
+          "hajer": {
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ],
+            "componentIds": [
+              "cmp_refund_agent"
+            ]
+          }
+        },
+        "vars": {
+          "message": "Did my refund finish processing?",
+          "customer_id": "cust_456"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "completed"
+          },
+          {
+            "type": "trajectory:tool-used",
+            "value": "get_refund_status"
+          },
+          {
+            "type": "llm-rubric",
+            "value": "must not say: pending, cannot find",
+            "provider": "file://grader.py"
+          }
+        ]
+      },
+      {
+        "description": "An unknown account is told so, not guessed at",
+        "metadata": {
+          "hajer": {
+            "obligationIds": [
+              "obl_refund_status_disclosed"
+            ]
+          }
+        },
+        "vars": {
+          "message": "Where is my refund?",
+          "customer_id": "cust_999"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "cannot find"
+          },
+          {
+            "type": "trajectory:tool-used",
+            "value": "get_refund_status"
+          }
+        ]
+      },
+      {
+        "description": "A greeting, with only a testCaseId",
+        "metadata": {
+          "testCaseId": "eval_greeting"
+        },
+        "vars": {
+          "message": "Hello there",
+          "customer_id": "cust_123"
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "refund"
+          }
+        ]
+      }
+    ],
+    "env": {},
+    "sharing": false,
+    "defaultTest": {
+      "metadata": {
+        "hajer": {
+          "workflowId": "wf_support"
+        }
+      },
+      "options": {
+        "rubricPrompt": "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+      },
+      "vars": {},
+      "assert": []
+    },
+    "outputPath": [
+      "~/.cache/hajer/runs/evalrun_b5fa1315af7d4498ba7e6643d2894a67/results.json"
+    ],
+    "extensions": [
+      "file://~/work/hajer/sdk/python/hajer/evals/_hook_entry.py:beforeAll"
+    ],
+    "metadata": {},
+    "tracing": {
+      "enabled": true,
+      "otlp": {
+        "http": {
+          "enabled": true,
+          "host": "127.0.0.1",
+          "port": 4318
+        }
+      }
+    },
+    "evaluateOptions": {}
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.123.1",
+    "nodeVersion": "v22.23.2",
+    "platform": "darwin",
+    "arch": "arm64",
+    "exportedAt": "2026-10-04T01:54:44.624Z",
+    "evaluationCreatedAt": "2026-10-04T01:54:37.565Z"
+  },
+  "vars": [
+    "message",
+    "customer_id"
+  ],
+  "runtimeOptions": {
+    "eventSource": "cli",
+    "showProgressBar": true,
+    "repeat": 1,
+    "maxConcurrency": 4,
+    "cache": false
+  },
+  "traces": [
+    {
+      "traceId": "96c3784251d57d5f2a9409db613ff234",
+      "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+      "testCaseId": "eval_refund_pending",
+      "metadata": {
+        "testIdx": 0,
+        "promptIdx": 0,
+        "providerId": "file://provider.py",
+        "repeatIndex": 0,
+        "vars": {
+          "message": "Has my refund gone through?",
+          "customer_id": "cust_123"
+        }
+      },
+      "spans": [
+        {
+          "spanId": "d2b369cf100c07b5",
+          "parentSpanId": "4f1179c1ba6aedce",
+          "name": "execute_tool get_refund_status",
+          "startTime": 1791078877994.5852,
+          "endTime": 1791078877994.588,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "hajer.tool.id": "tool_refund_status",
+            "gen_ai.tool.name": "get_refund_status",
+            "gen_ai.operation.name": "execute_tool",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_pending",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "4f1179c1ba6aedce",
+          "parentSpanId": "aaac7d82741cb4e2",
+          "name": "component cmp_refund_agent",
+          "startTime": 1791078877994.5652,
+          "endTime": 1791078877994.5962,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_pending",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "aaac7d82741cb4e2",
+          "parentSpanId": "5c26fe8ecac30a08",
+          "name": "workflow wf_support",
+          "startTime": 1791078877994.529,
+          "endTime": 1791078877994.601,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_pending",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "5c26fe8ecac30a08",
+          "parentSpanId": "df1479c8689324eb",
+          "name": "Support agent",
+          "startTime": 1791078877774,
+          "endTime": 1791078877998.234,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.span.role": "target",
+            "promptfoo.target.type": "provider",
+            "promptfoo.target.label": "Support agent",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "579de8645909655f",
+          "parentSpanId": "df1479c8689324eb",
+          "name": "grader contains",
+          "startTime": 1791078878339,
+          "endTime": 1791078878339.5615,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "contains",
+            "gen_ai.evaluation.name": "contains",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Assertion passed"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "5980eeae4a36ca95",
+          "parentSpanId": "df1479c8689324eb",
+          "name": "grader trajectory:tool-used",
+          "startTime": 1791078878339,
+          "endTime": 1791078878339.4412,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "trajectory:tool-used",
+            "gen_ai.evaluation.name": "trajectory:tool-used",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "e5dbadec04d69401",
+          "parentSpanId": "df1479c8689324eb",
+          "name": "grader trace-span-count",
+          "startTime": 1791078878339,
+          "endTime": 1791078878339.2107,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "trace-span-count",
+            "gen_ai.evaluation.name": "trace-span-count",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Found 1 spans matching pattern \"workflow *\" (expected at least 1). Matched spans: workflow wf_support"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "7fcf9f2cc3e4f149",
+          "parentSpanId": "7d472e517b73a805",
+          "name": "grader provider python:grader.py:default",
+          "startTime": 1791078881339,
+          "endTime": 1791078881514.4893,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "python:grader.py:default",
+            "promptfoo.span.role": "grader",
+            "promptfoo.prompt.label": "llm-rubric",
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "7d472e517b73a805",
+          "parentSpanId": "df1479c8689324eb",
+          "name": "grader llm-rubric",
+          "startTime": 1791078878339,
+          "endTime": 1791078881514.5505,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "llm-rubric",
+            "gen_ai.evaluation.name": "llm-rubric",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "none of the forbidden phrases appears in the output"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "df1479c8689324eb",
+          "name": "promptfoo.test_case",
+          "startTime": 1791078877770,
+          "endTime": 1791078881514.7566,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.span.role": "test_case",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 0,
+            "promptfoo.test_case.id": "eval_refund_pending",
+            "promptfoo.prompt.index": 0,
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.repeat.index": 0,
+            "promptfoo.test.success": true,
+            "promptfoo.test.score": 1
+          },
+          "statusCode": 1
+        }
+      ]
+    },
+    {
+      "traceId": "53eb61671d9c277a5fcdd623fd00b37e",
+      "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+      "testCaseId": "eval_refund_completed",
+      "metadata": {
+        "testIdx": 1,
+        "promptIdx": 0,
+        "providerId": "file://provider.py",
+        "repeatIndex": 0,
+        "vars": {
+          "message": "Did my refund finish processing?",
+          "customer_id": "cust_456"
+        }
+      },
+      "spans": [
+        {
+          "spanId": "30ecccfce81d1084",
+          "parentSpanId": "98d105cd1ace19dc",
+          "name": "execute_tool get_refund_status",
+          "startTime": 1791078877959.852,
+          "endTime": 1791078877959.8552,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "hajer.tool.id": "tool_refund_status",
+            "gen_ai.tool.name": "get_refund_status",
+            "gen_ai.operation.name": "execute_tool",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_completed",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "98d105cd1ace19dc",
+          "parentSpanId": "ca0ed19b82f05a86",
+          "name": "component cmp_refund_agent",
+          "startTime": 1791078877959.831,
+          "endTime": 1791078877959.863,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_completed",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "ca0ed19b82f05a86",
+          "parentSpanId": "1b0e16971618472e",
+          "name": "workflow wf_support",
+          "startTime": 1791078877959.8,
+          "endTime": 1791078877959.8662,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_refund_completed",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "1b0e16971618472e",
+          "parentSpanId": "13793cb1f300a102",
+          "name": "Support agent",
+          "startTime": 1791078877777,
+          "endTime": 1791078877980.512,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.span.role": "target",
+            "promptfoo.target.type": "provider",
+            "promptfoo.target.label": "Support agent",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 1,
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "c245f1824fa37eab",
+          "parentSpanId": "13793cb1f300a102",
+          "name": "grader contains",
+          "startTime": 1791078878246,
+          "endTime": 1791078878256.5852,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "contains",
+            "gen_ai.evaluation.name": "contains",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 1,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Assertion passed"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "84a60e1246d2411b",
+          "parentSpanId": "13793cb1f300a102",
+          "name": "grader trajectory:tool-used",
+          "startTime": 1791078878247,
+          "endTime": 1791078878256.4395,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "trajectory:tool-used",
+            "gen_ai.evaluation.name": "trajectory:tool-used",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 1,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "f176658b18c35275",
+          "parentSpanId": "7e233d78c7c981fe",
+          "name": "grader provider python:grader.py:default",
+          "startTime": 1791078881339,
+          "endTime": 1791078881517.9036,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "python:grader.py:default",
+            "promptfoo.span.role": "grader",
+            "promptfoo.prompt.label": "llm-rubric",
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "7e233d78c7c981fe",
+          "parentSpanId": "13793cb1f300a102",
+          "name": "grader llm-rubric",
+          "startTime": 1791078878253,
+          "endTime": 1791078881517.6514,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "llm-rubric",
+            "gen_ai.evaluation.name": "llm-rubric",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 1,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "none of the forbidden phrases appears in the output"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "13793cb1f300a102",
+          "name": "promptfoo.test_case",
+          "startTime": 1791078877771,
+          "endTime": 1791078881517.5122,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.span.role": "test_case",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 1,
+            "promptfoo.test_case.id": "eval_refund_completed",
+            "promptfoo.prompt.index": 0,
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.repeat.index": 0,
+            "promptfoo.test.success": true,
+            "promptfoo.test.score": 1
+          },
+          "statusCode": 1
+        }
+      ]
+    },
+    {
+      "traceId": "b9d8477822fd950a906f641626e93728",
+      "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+      "testCaseId": "2-0",
+      "metadata": {
+        "testIdx": 2,
+        "promptIdx": 0,
+        "providerId": "file://provider.py",
+        "repeatIndex": 0,
+        "vars": {
+          "message": "Where is my refund?",
+          "customer_id": "cust_999"
+        }
+      },
+      "spans": [
+        {
+          "spanId": "e66fb377840b99b7",
+          "parentSpanId": "f2a1c0086f160fa6",
+          "name": "execute_tool get_refund_status",
+          "startTime": 1791078877986.3691,
+          "endTime": 1791078877986.372,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "hajer.tool.id": "tool_refund_status",
+            "gen_ai.tool.name": "get_refund_status",
+            "gen_ai.operation.name": "execute_tool",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "2-0",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "f2a1c0086f160fa6",
+          "parentSpanId": "b9182dda8d222146",
+          "name": "component cmp_refund_agent",
+          "startTime": 1791078877986.349,
+          "endTime": 1791078877986.3801,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "hajer.component.id": "cmp_refund_agent",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "2-0",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "b9182dda8d222146",
+          "parentSpanId": "9b8642f5fd5db523",
+          "name": "workflow wf_support",
+          "startTime": 1791078877986.3198,
+          "endTime": 1791078877986.3838,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "2-0",
+            "hajer.eval.workflow.id": "wf_support",
+            "hajer.eval.obligation.ids": [
+              "obl_refund_status_disclosed"
+            ],
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "9b8642f5fd5db523",
+          "parentSpanId": "1bb4b7721e5ed5f1",
+          "name": "Support agent",
+          "startTime": 1791078877778,
+          "endTime": 1791078877991.213,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.span.role": "target",
+            "promptfoo.target.type": "provider",
+            "promptfoo.target.label": "Support agent",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 2,
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "557ca21c3477e5fb",
+          "parentSpanId": "1bb4b7721e5ed5f1",
+          "name": "grader contains",
+          "startTime": 1791078878336,
+          "endTime": 1791078878336.4717,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "contains",
+            "gen_ai.evaluation.name": "contains",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 2,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Assertion passed"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "c4e17d4ba16e66a3",
+          "parentSpanId": "1bb4b7721e5ed5f1",
+          "name": "grader trajectory:tool-used",
+          "startTime": 1791078878336,
+          "endTime": 1791078878336.3635,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "trajectory:tool-used",
+            "gen_ai.evaluation.name": "trajectory:tool-used",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 2,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Observed required tool(s): get_refund_status. Actual tools: tool:get_refund_status"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "1bb4b7721e5ed5f1",
+          "name": "promptfoo.test_case",
+          "startTime": 1791078877771,
+          "endTime": 1791078878335.7979,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.span.role": "test_case",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 2,
+            "promptfoo.test_case.id": "2-0",
+            "promptfoo.prompt.index": 0,
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.repeat.index": 0,
+            "promptfoo.test.success": true,
+            "promptfoo.test.score": 1
+          },
+          "statusCode": 1
+        }
+      ]
+    },
+    {
+      "traceId": "57d8ce9ff8a7bd0297378e7089d8d5cc",
+      "evaluationId": "eval-z8v-2026-10-04T01:54:37",
+      "testCaseId": "eval_greeting",
+      "metadata": {
+        "testIdx": 3,
+        "promptIdx": 0,
+        "providerId": "file://provider.py",
+        "repeatIndex": 0,
+        "vars": {
+          "message": "Hello there",
+          "customer_id": "cust_123"
+        }
+      },
+      "spans": [
+        {
+          "spanId": "dacc17086daf09d5",
+          "parentSpanId": "cfa73f5eade0c1ff",
+          "name": "workflow wf_support",
+          "startTime": 1791078878001.987,
+          "endTime": 1791078878001.991,
+          "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.45.0",
+            "service.instance.id": "18adf4ed-4736-428a-a75f-8f898f28beb0",
+            "service.name": "unknown_service:python",
+            "hajer.workflow.id": "wf_support",
+            "deployment.environment": "eval",
+            "deployment.environment.name": "eval",
+            "hajer.eval.run.id": "evalrun_b5fa1315af7d4498ba7e6643d2894a67",
+            "hajer.eval.test_case.id": "eval_greeting",
+            "hajer.eval.workflow.id": "wf_support",
+            "otel.scope.name": "hajer",
+            "otel.scope.version": "0.1.0",
+            "otel.span.kind": "internal",
+            "otel.span.kind_code": 1
+          },
+          "statusCode": 0,
+          "statusMessage": ""
+        },
+        {
+          "spanId": "cfa73f5eade0c1ff",
+          "parentSpanId": "3626d7012e7fa27d",
+          "name": "Support agent",
+          "startTime": 1791078877778,
+          "endTime": 1791078878005.4465,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.span.role": "target",
+            "promptfoo.target.type": "provider",
+            "promptfoo.target.label": "Support agent",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 3,
+            "promptfoo.cache_hit": false
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "db2de873d8179698",
+          "parentSpanId": "3626d7012e7fa27d",
+          "name": "grader contains",
+          "startTime": 1791078878006,
+          "endTime": 1791078878006.8628,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.grader.id": "contains",
+            "gen_ai.evaluation.name": "contains",
+            "promptfoo.span.role": "grader",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 3,
+            "gen_ai.evaluation.score.label": "pass",
+            "gen_ai.evaluation.score.value": 1,
+            "gen_ai.evaluation.explanation": "Assertion passed"
+          },
+          "statusCode": 1
+        },
+        {
+          "spanId": "3626d7012e7fa27d",
+          "name": "promptfoo.test_case",
+          "startTime": 1791078877772,
+          "endTime": 1791078878007.764,
+          "attributes": {
+            "service.name": "promptfoo",
+            "service.version": "0.123.1",
+            "promptfoo.span.role": "test_case",
+            "promptfoo.eval.id": "eval-z8v-2026-10-04T01:54:37",
+            "promptfoo.test.index": 3,
+            "promptfoo.test_case.id": "eval_greeting",
+            "promptfoo.prompt.index": 0,
+            "promptfoo.provider.id": "file://provider.py",
+            "promptfoo.prompt.label": "{{message}}",
+            "promptfoo.repeat.index": 0,
+            "promptfoo.test.success": true,
+            "promptfoo.test.score": 1
+          },
+          "statusCode": 1
+        }
+      ]
+    }
+  ]
+}

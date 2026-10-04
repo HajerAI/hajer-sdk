@@ -26,6 +26,11 @@ a test suite with no Hajer credentials runs exactly as it did before the SDK was
 `hajer.scope()` is the unit an obligation is about: every provider call made inside the block — including
 the ones a framework makes in child tasks — belongs to it, and the `verify` inside the block carries them.
 
+`hajer.workflow(id)`, `hajer.component(id)` and `hajer.tool(id)` declare the shape around those calls as spans — a
+decorator or a `with` block each — for the application's own OpenTelemetry provider or, under `hajer eval`, the
+engine's receiver. `workflow` also enters `scope(workflow=id)`, so the span and the recorded calls carry one id.
+Without the `otel` extra they run the code and emit nothing (`hajer/_telemetry.py`).
+
 `hajer.attach()` (or `HAJER_ATTACH=1` with the import-time hook) is the other way round: no verifier, no
 scope, one `observe` observation per provider call, for a process nobody has instrumented yet.
 `hajer/_attach.py` states exactly what leaves the process at each capture setting.
@@ -73,6 +78,7 @@ from hajer._redact import (
     redact_document,
 )
 from hajer._settings import HajerSettings
+from hajer._telemetry import component, tool, workflow
 from hajer._wrap import (
     Operation,
     ToolCall,
@@ -134,14 +140,17 @@ __all__ = [
     "attachment",
     "build_policy",
     "clear_wrapped_calls",
+    "component",
     "detach",
     "instrument",
     "observe_sink",
     "record_boundaries",
     "redact_document",
     "scope",
+    "tool",
     "uninstrument",
     "wire_source",
+    "workflow",
     "wrap",
     "wrapped_calls",
     "wrapped_calls_dropped",

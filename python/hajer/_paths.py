@@ -19,6 +19,11 @@ ASSESSMENT_PATH: Final[str] = "/api/teams/{team_id}/observations/{observation_id
 #: HAJER_BASE_URL" without a credential. The client never touches it.
 HEALTH_PATH: Final[str] = "/api/health"
 
+#: Where `hajer eval --upload` posts an eval run (`hajer.evals._upload`). **Not in `SDK_OPERATIONS`**: the
+#: vendored snapshot does not carry the operation yet, and the generator would look for one it lacks. The
+#: payload is the SDK's own versioned schema (`hajer.evals._payload`), not a generated wire type.
+EVAL_RUNS_PATH: Final[str] = "/api/teams/{team_id}/projects/{project_id}/eval-runs"
+
 SDK_OPERATIONS: Final[tuple[tuple[str, str], ...]] = (
     ("post", VERIFY_PATH),
     ("post", OBSERVE_PATH),

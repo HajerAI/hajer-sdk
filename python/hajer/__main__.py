@@ -1,12 +1,17 @@
-"""`python -m hajer` — the four things an operator does from a shell.
+"""`hajer` (also `python -m hajer`) — the five things an operator does from a shell.
 
-    python -m hajer attach-path     # the directory to put on PYTHONPATH to attach with no code change
-    python -m hajer tail --follow   # one line per observation this team has recorded, as they arrive
-    python -m hajer doctor [--json] # what this process's SDK is configured to do, and whether it can
-    python -m hajer proxy --upstream https://api.anthropic.com --listen 127.0.0.1:8091
+    hajer attach-path     # the directory to put on PYTHONPATH to attach with no code change
+    hajer tail --follow   # one line per observation this team has recorded, as they arrive
+    hajer doctor [--json] # what this process's SDK is configured to do, and whether it can
+    hajer proxy --upstream https://api.anthropic.com --listen 127.0.0.1:8091
+    hajer eval [-c promptfooconfig.yaml] [--workflow ID] [--upload]   # run an eval on the pinned engine
 
-All four read `HAJER_*` from the environment the way the SDK does, and none takes a credential on the
+All five read `HAJER_*` from the environment the way the SDK does, and none takes a credential on the
 command line: a key in an argument is a key in the shell history and in every process listing.
+
+`eval` is the eval runner (`hajer.evals`): everything after the word is its own, parsed by `hajer.evals._cli`,
+and every flag it does not know is handed to the engine, so `hajer eval --help` is the runner's help and
+`hajer eval --engine-help` the engine's.
 
 `proxy` is the opt-in wire recorder: it sits in front of the provider on loopback, forwards the exchange
 and records it as origin `BROKER`, which is evidence of the bytes rather than a self-report about them.
@@ -50,6 +55,8 @@ from hajer._payload import wire_source
 from hajer._self_check import emit_self_check, self_check
 from hajer._settings import HajerSettings, SettingSource, settings_sources
 from hajer._transport import probe
+from hajer.evals import _cli
+from hajer.evals._engine import engine_status
 
 #: What an absent field prints as. One character, so the columns stay readable when half a page has none.
 _ABSENT = "-"
@@ -184,6 +191,7 @@ def doctor(
     status = probe(settings.base_url, HEALTH_PATH, timeout_ms=settings.deadline_ms_default, transport=transport)
     report = _report(settings, rows, status)
     report["selfCheck"] = self_check(settings)
+    report["evals"] = engine_status(settings)
     if as_json:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
         return 0
@@ -195,6 +203,7 @@ def doctor(
         f"base url        {settings.base_url}{HEALTH_PATH} -> {reached} (keyless GET)",
         f"inert           {'yes' if settings.inert else 'no'}",
         f"self check      {json.dumps(report['selfCheck'], sort_keys=True)}",
+        f"eval engine     {json.dumps(report['evals'], sort_keys=True)}",
     ]
     because = _why_inert(settings)
     if because is not None:
@@ -207,8 +216,11 @@ def doctor(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m hajer", description=__doc__)
+    parser = argparse.ArgumentParser(prog="hajer", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    # `eval` is listed so `hajer --help` names every command, and never *parsed* here: `main` hands everything
+    # after the word to `hajer.evals._cli.main`, whose flags have one definition — the runner's own.
+    sub.add_parser("eval", help="Run a promptfoo configuration on the pinned eval engine; `hajer eval --help`")
     sub.add_parser(
         "attach-path",
         help="Print the directory to put on PYTHONPATH so HAJER_ATTACH=1 attaches with no code change",
@@ -233,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments[:1] == ["proxy"]:
         return _proxy.main(arguments[1:])
+    if arguments[:1] == ["eval"]:
+        return _cli.main(arguments[1:])
     options = build_parser().parse_args(arguments)
     if options.command == "attach-path":
         return _attach_path()

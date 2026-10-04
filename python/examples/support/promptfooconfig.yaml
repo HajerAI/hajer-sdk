@@ -1,0 +1,86 @@
+# An ordinary promptfoo configuration. The only Hajer-specific lines are under `metadata`: a stable
+# `testCaseId` (promptfoo's own key) and the reserved `hajer` namespace naming the workflow a test targets and
+# the obligations it covers. Run it with `hajer eval` from this directory.
+description: Customer support regression suite (hajer example)
+
+providers:
+  - id: file://provider.py
+    label: Support agent
+
+prompts:
+  - "{{message}}"
+
+defaultTest:
+  metadata:
+    hajer:
+      workflowId: wf_support
+  options:
+    # The deterministic grader reads these two labelled lines (grader.py); no model is involved.
+    rubricPrompt: "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+
+tests:
+  - description: Pending refund is reported as pending
+    metadata:
+      testCaseId: eval_refund_pending
+      hajer:
+        obligationIds: [obl_refund_status_disclosed]
+        componentIds: [cmp_refund_agent]
+    vars:
+      message: Has my refund gone through?
+      customer_id: cust_123
+    assert:
+      - type: contains
+        value: pending
+      - type: trajectory:tool-used
+        value: get_refund_status
+      - type: trace-span-count
+        value:
+          pattern: "workflow *"
+          min: 1
+      - type: llm-rubric
+        value: "must not say: has completed, is complete, was refunded"
+        provider: file://grader.py
+
+  - description: Completed refund is reported accurately
+    metadata:
+      testCaseId: eval_refund_completed
+      hajer:
+        obligationIds: [obl_refund_status_disclosed]
+        componentIds: [cmp_refund_agent]
+    vars:
+      message: Did my refund finish processing?
+      customer_id: cust_456
+    assert:
+      - type: contains
+        value: completed
+      - type: trajectory:tool-used
+        value: get_refund_status
+      - type: llm-rubric
+        value: "must not say: pending, cannot find"
+        provider: file://grader.py
+
+  - description: An unknown account is told so, not guessed at
+    # No testCaseId on purpose: `hajer eval` warns that correlation falls back to the test's position.
+    metadata:
+      hajer:
+        obligationIds: [obl_refund_status_disclosed]
+    vars:
+      message: Where is my refund?
+      customer_id: cust_999
+    assert:
+      - type: contains
+        value: cannot find
+      - type: trajectory:tool-used
+        value: get_refund_status
+
+  - description: A greeting, with only a testCaseId
+    # No `hajer` key of its own: it inherits the workflow from defaultTest and covers no obligation, so
+    # `hajer eval --obligation obl_refund_status_disclosed` leaves it out.
+    metadata:
+      testCaseId: eval_greeting
+    vars:
+      message: Hello there
+      customer_id: cust_123
+    assert:
+      - type: contains
+        value: refund

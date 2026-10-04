@@ -14,6 +14,8 @@ just check                # fmt + lint + typecheck + deadcode + deps + lock-chec
 just test                 # pytest; `just test -k wrap` for a subset
 just contract-refresh     # ../contract/openapi.json → hajer/_wire.py (generated; commit it with the change)
 just contract-check       # non-mutating drift check of that chain
+just test --engine -m engine   # the golden eval test: Node >= 22.22 on PATH, installs the pinned engine from npm once
+just evals-pin 0.124.0    # move the engine pin (hajer/evals/engine/package.json + lockfile), then run the golden test
 ```
 
 Python ≥ 3.11 · uv · httpx · pydantic v2. Runtime dependencies are **httpx and pydantic, and nothing
@@ -58,6 +60,10 @@ hajer/
 ├── _payload.py      the request bodies, the idempotency derivation, the assessment parsing
 ├── _client.py       Hajer and AsyncHajer
 ├── _redact.py       the client-side redaction walk, its budgets and the policy
+├── _telemetry.py    workflow()/component()/tool(): the span emitter, OTel-free; eval_binding(), flush()
+├── _telemetry_otel.py   the OpenTelemetry half of it, loaded only when `hajer[otel]` is installed
+├── evals/           `hajer eval` (`hajer[evals]`): the pinned promptfoo engine (engine/package.json + lockfile),
+│                    the metadata conventions and `beforeAll` hook, the payload, the upload, the CLI
 ├── _rules.py        GENERATED from the platform's redaction catalog — never hand-edited
 ├── _checksums.py    GENERATED alongside _rules.py — never hand-edited
 └── _wire.py         GENERATED from ../contract/openapi.json — never hand-edited
@@ -70,7 +76,9 @@ code, and `_bootstrap/sitecustomize.py` is meant to be *found* rather than impor
 
 Import direction is one way and there are no cycles: `_json` / `_paths` ← `_errors` ← `_settings` ←
 `_transport` ← `_wrap` ← `_payload` ← `_queue` ← `_client` ← `_attach` ← `__init__`. `_wire` is imported
-only by `_payload`. `_wrap` imports nothing of the SDK above `_settings` and never will — attach mode
+only by `_payload`. `_telemetry` sits above `_wrap` (it opens `scope()`) and below `_client`; `hajer.evals.*`
+imports `_settings`, `_json`, `_transport`, `_paths`, `_errors`, `_redact` and `_telemetry`, and nothing in the
+core imports `hajer.evals`. `_wrap` imports nothing of the SDK above `_settings` and never will — attach mode
 reaches it through one installed hook (`_wrap.set_settled_hook`) rather than an import, which is what
 keeps the seam that runs inside every provider call free of the client that sends the observation.
 
@@ -91,7 +99,10 @@ keeps the seam that runs inside every provider call free of the client that send
   `tests/fakes.py`. A test that would open a socket is a test that does not belong here — with one
   exception, on loopback only, and marked: a test that can only make its claim with a socket carries
   `@pytest.mark.loopback` (registered in `pyproject.toml`; `just test -m "not loopback"` leaves them out)
-  and binds only `127.0.0.1`. No current test needs it; the marker stays so the rule has a spelling.
+  and binds only `127.0.0.1`. The second, equally explicit exception is `@pytest.mark.engine`: the golden
+  eval test runs the pinned engine on Node and, on a cold cache, installs it from the npm registry. It is
+  selected only with `pytest --engine` (never by detecting Node, which every CI runner has), and `just ci`
+  leaves it out; the `evals` job in `.github/workflows/python.yml` is where it runs.
 
 ## Conventions
 

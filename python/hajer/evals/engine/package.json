@@ -1,0 +1,12 @@
+{
+  "name": "hajer-evals-engine",
+  "private": true,
+  "description": "The exact upstream promptfoo `hajer eval` installs and drives. Bump with `just evals-pin <version>`; the lockfile beside this file is what makes the install deterministic.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "dependencies": {
+    "promptfoo": "0.123.1"
+  }
+}

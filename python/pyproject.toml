@@ -56,7 +56,17 @@ Changelog = "https://github.com/HajerAI/hajer-sdk/blob/main/python/CHANGELOG.md"
 [project.optional-dependencies]
 openai = ["openai>=3.13.0"]
 anthropic = ["anthropic>=0.75.0"]
-otel = ["opentelemetry-sdk>=1.37.0"]
+# The span emitter (`hajer.workflow` / `component` / `tool`) and the OTel receiver `instrument()` adds: both need
+# the OpenTelemetry SDK, and the emitter exports over OTLP/HTTP when the process has no provider of its own.
+otel = ["opentelemetry-sdk>=1.37.0", "opentelemetry-exporter-otlp-proto-http>=1.37.0"]
+# `hajer eval`: the eval runner. Its engine is upstream promptfoo, installed from npm at the exact version
+# pinned in `hajer/evals/engine/package.json` (Node >= 22.22 on PATH); the Python side needs only `[otel]`.
+evals = ["hajer[otel]"]
+
+# `hajer` on the command line is `python -m hajer`: a console script cannot be conditional on an extra, so
+# `hajer eval` checks for Node and the engine itself and says what to install.
+[project.scripts]
+hajer = "hajer.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.9.7,<0.13.0"]
@@ -66,6 +76,10 @@ build-backend = "uv_build"
 module-name = "hajer"
 # Flat layout: hajer/ lives at the project root, not under src/.
 module-root = ""
+# The engine pin (`hajer/evals/engine/package.json` + `package-lock.json`) ships as package data by default;
+# an `npm` run inside that directory must never put a `node_modules/` into the wheel.
+source-exclude = ["hajer/evals/engine/node_modules/**"]
+wheel-exclude = ["hajer/evals/engine/node_modules/**"]
 
 [dependency-groups]
 dev = [
@@ -144,7 +158,9 @@ quote-style = "double"
 [tool.basedpyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.11"
-include = ["hajer", "tests", "scripts"]
+include = ["hajer", "tests", "scripts", "examples"]
+# The example provider does `from app import handle`: promptfoo runs it with its own directory on sys.path.
+extraPaths = ["examples/support"]
 exclude = ["**/__pycache__", ".venv"]
 venvPath = "."
 venv = ".venv"
@@ -163,17 +179,22 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra --strict-markers"
 markers = [
     "loopback: opens a socket, on 127.0.0.1 (or a private Unix socket file) only — the one exception to no network in tests (CLAUDE.md); deselect with -m 'not loopback'",
+    "engine: runs the pinned eval engine (Node >= 22.22 on PATH; the first run installs it from the npm registry) — selected only with `pytest --engine` (CLAUDE.md)",
 ]
 
 # ── deptry ───────────────────────────────────────────────────────────────────
 
 [tool.deptry]
 known_first_party = ["hajer", "tests"]
+# The example application imports its own neighbours (`from app import handle`) the way promptfoo runs it,
+# with the provider's directory on sys.path; it is not part of the package's dependency graph.
+extend_exclude = ["examples"]
 
 [tool.deptry.per_rule_ignores]
 # Declared and deliberately never imported: `wrap()` instruments the client object the caller hands
 # it, so these two extras exist to install the provider a customer already uses, not to be imported.
-DEP002 = ["anthropic", "openai"]
+# `hajer` itself appears because the `evals` extra is spelled `hajer[otel]`: one extra naming another.
+DEP002 = ["anthropic", "openai", "hajer"]
 
 # ── vulture ──────────────────────────────────────────────────────────────────
 
@@ -203,10 +224,18 @@ ignore_names = [
     # is why a customer's provider paths and query strings do not end up in an access log.
     "daemon_threads",
     "log_message",
-    # `pytest` calls this hook by name out of `conftest.py`, and Python calls `__getitem__`
-    # through the subscript syntax. Both are protocol names no line of ours mentions, which is
+    # `pytest` calls these by name out of `conftest.py` and reads `pytestmark` off a test module, and Python calls
+    # `__getitem__` through the subscript syntax. All are protocol names no line of ours mentions, which is
     # the same category as the two above.
     "pytest_addoption",
+    "pytest_collection_modifyitems",
+    "pytestmark",
+    # `http.server` dispatches a request to `do_<METHOD>` by name: the golden test's recording proxy defines them.
+    "do_GET",
+    "do_POST",
+    "do_PUT",
+    "do_HEAD",
+    "do_CONNECT",
     "__getitem__",
     # `isinstance` reads `__class__` and the subscript syntax calls `__getitem__`; neither is a name
     # any line of ours writes, which is what a protocol name is.
