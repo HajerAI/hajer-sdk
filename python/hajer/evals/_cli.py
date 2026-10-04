@@ -111,12 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--upload",
         action="store_true",
-        help="Upload the payload to Hajer (needs HAJER_API_KEY, HAJER_TEAM_ID, a project)",
+        help="Upload the payload to Hajer (needs HAJER_API_KEY and HAJER_TEAM_ID)",
     )
     parser.add_argument(
         "--no-upload", action="store_true", help="Do not upload (the default; named so a CI script can say it)"
     )
-    parser.add_argument("--project-id", metavar="ID", help="The Hajer project to upload to; default HAJER_PROJECT_ID")
     parser.add_argument(
         "--payload-out", type=Path, metavar="PATH", help="Also write the payload here (default: the run directory)"
     )
@@ -232,7 +231,7 @@ def main(argv: list[str], *, settings: HajerSettings | None = None, runtime: Run
 
     upload_status = "not requested"
     if options.upload and not options.no_upload:
-        receipt = runtime.upload(wire, settings=settings, project_id=options.project_id, transport=runtime.transport)
+        receipt = runtime.upload(wire, settings=settings, transport=runtime.transport)
         upload_status = receipt.status if receipt.reason is None else f"{receipt.status} ({receipt.reason})"
         if receipt.status != "uploaded":
             err.write(f"hajer eval: upload {upload_status}; the payload is kept at {payload_path}\n")

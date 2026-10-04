@@ -42,22 +42,11 @@ lock-check:
     uv lock --check
 
 # Run every quality gate
-check: fmt lint typecheck deadcode deps lock-check contract-check
+check: fmt lint typecheck deadcode deps lock-check
 
 # Run the test suite (pass extra pytest args, e.g. `just test -k wrap`)
 test *args:
     uv run pytest {{ args }}
-
-# After the platform's API moves: `contract/openapi.json` -> hajer/_wire.py.
-# Generated; never hand-edited; committed with the snapshot that moved it.
-contract-refresh:
-    uv run python scripts/generate_wire.py --write
-
-# Non-mutating: hajer/_wire.py is what the generator emits from `contract/openapi.json`.
-# `hajer/_rules.py` and `hajer/_checksums.py` are generated too, from the platform's redaction catalog;
-# their generators and drift check run in the platform repository (`contract/README.md`).
-contract-check:
-    uv run python scripts/generate_wire.py --check
 
 # Build the sdist and wheel into dist/
 build:
@@ -81,5 +70,5 @@ ci:
     uv lock --check
     uv run ruff format --check hajer tests scripts examples
     uv run ruff check hajer tests scripts examples
-    just typecheck deadcode deps contract-check
+    just typecheck deadcode deps
     just test

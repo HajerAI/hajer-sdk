@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from hajer._redact import build_policy, redact_submission
+from hajer._redact import build_policy, redact_document
 from hajer._rules import CATALOG_ID
 from tests.repo import CONTRACT
 
@@ -62,8 +62,8 @@ def test_the_vectors_name_the_catalog_this_client_carries() -> None:
 
 @pytest.mark.parametrize("row", ROWS, ids=[row.name for row in ROWS])
 def test_every_shared_vector_reproduces(row: Vector) -> None:
-    value, report = redact_submission({"value": row.value}, policy=build_policy())
-    classes = () if report is None else tuple(sorted(name for name, _ in report.counts_by_class))
+    value, entries = redact_document({"value": row.value}, policy=build_policy())
+    classes = tuple(sorted({entry.category for entry in entries}))
     assert classes == row.classes, row.name
     assert isinstance(value, dict)
     assert value["value"] == row.redacted, row.name

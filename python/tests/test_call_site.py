@@ -25,7 +25,6 @@ from hajer import _frames
 from hajer._frames import file_digest
 from hajer._json import JsonObject
 from hajer._wrap import located_file
-from tests.conftest import Recorder, assessment_json, responds
 from tests.fakes import FakeOpenAI
 
 
@@ -43,37 +42,37 @@ class _IdnOpenAI(FakeOpenAI):
     base_url = "https://bücher.example/v1"
 
 
+def _as_document(call: hajer.WrappedCall) -> JsonObject:
+    """The record's locations as a document: its frames, its host and its content, each only when recorded."""
+    document: JsonObject = {}
+    if call.caller_frames:
+        document["callerFrames"] = [frame.to_wire() for frame in call.caller_frames]
+    if call.provider_host is not None:
+        document["providerHost"] = call.provider_host
+    if call.content is not None:
+        document["content"] = dict(call.content)
+    return document
+
+
 def _posted_call(settings: hajer.HajerSettings, *, client: FakeOpenAI | None = None) -> JsonObject:
-    recorder = Recorder(responds(assessment_json()))
     provider = hajer.wrap(client if client is not None else FakeOpenAI(), settings=settings)
-    with hajer.Hajer(settings=settings, transport=recorder.transport()) as hajer_client:
+    with hajer.scope() as operation:
         provider.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": "You are terse."}, {"role": "user", "content": "hi"}],
         )
-        hajer_client.verify("refund-policy@1", {"order": "o-1"}, "reply")
-    calls = cast("list[JsonObject]", recorder.bodies()[0]["wrappedCalls"])
-    assert len(calls) == 1
-    return calls[0]
+    (call,) = operation.calls
+    return _as_document(call)
 
 
-def test_frames_are_sent_by_default(settings: hajer.HajerSettings, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_frames_are_recorded_by_default(settings: hajer.HajerSettings, monkeypatch: pytest.MonkeyPatch) -> None:
     # This file predates the (pretended) process start however recently it was saved.
     _process_starts_now(monkeypatch)
-    recorder = Recorder(responds(assessment_json()))
-    provider = hajer.wrap(FakeOpenAI(), settings=settings)
-    with hajer.Hajer(settings=settings, transport=recorder.transport()) as hajer_client:
-        provider.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are terse."}, {"role": "user", "content": "hi"}],
-        )
-        hajer_client.verify("refund-policy@1", {"order": "o-1"}, "reply")
-    (call,) = cast("list[JsonObject]", recorder.bodies()[0]["wrappedCalls"])
+    call = _posted_call(settings)
     frames = cast("list[JsonObject]", call["callerFrames"])
-    assert frames[0]["qualname"] == "test_frames_are_sent_by_default"
+    assert frames[0]["qualname"] == "_posted_call"
     assert not str(frames[0]["file"]).startswith("/")
     assert frames[0]["file"] == "tests/test_call_site.py"
-    assert "systemDigest" not in call, "system digests remain separately opt-in"
     assert frames[0]["fileDigest"] == "sha256:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     assert "You are terse." in str(call["content"]), "message content is captured by default"
     assert "providerHost" not in call, "a client that names no base URL names no host"
@@ -280,18 +279,7 @@ def test_call_site_capture_is_opted_out_by_one_variable(settings: hajer.HajerSet
     assert quiet.capture_call_site is False
     call = _posted_call(settings.model_copy(update={"capture_call_site": False}), client=_HostedOpenAI())
     assert "callerFrames" not in call
-    assert "systemDigest" not in call
     assert "providerHost" not in call, "the opt-out covers the endpoint too"
-
-
-def test_a_raw_capture_carries_relative_frames_and_honours_the_opt_out(settings: hajer.HajerSettings) -> None:
-    raw = settings.model_copy(update={"capture_content": True, "capture_raw": True})
-    frames = cast("list[JsonObject]", _posted_call(raw)["callerFrames"])
-    assert frames
-    assert all(not str(frame["file"]).startswith("/") for frame in frames)
-    quiet = _posted_call(raw.model_copy(update={"capture_call_site": False}))
-    assert quiet["callerFrames"] == []
-    assert "systemDigest" not in quiet
 
 
 def _python(script: str) -> str:

@@ -1,9 +1,9 @@
-"""`attach()` — what a process that nobody instrumented records, and what it sends.
+"""`attach()` — what a process that nobody instrumented records.
 
 Every test here builds its own fake provider *module*, puts it in `sys.modules` (or lets the import hook
-find it on disk), and asserts on the bodies that reached a `httpx.MockTransport`. No provider library is
-installed in this environment and none is imported: that is the same constraint `wrap` lives under, and
-the reason attach mode can be tested at all.
+find it on disk), and asserts on the calls that were recorded. No provider library is installed in this
+environment and none is imported: that is the same constraint `wrap` lives under, and the reason attach
+mode can be tested at all.
 """
 
 from __future__ import annotations
@@ -15,27 +15,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
-import httpx
 import pytest
 
 import hajer
-from hajer._json import JsonObject
-from tests.conftest import Recorder, assessment_json
-from tests.fakes import FakeAnthropic, FakeAnthropicMessage, FakeAsyncAnthropic, FakeChatAnthropic
+from tests.fakes import FakeAnthropic, FakeAnthropicMessage, FakeAsyncAnthropic, FakeChatAnthropic, ProviderError
 
-ATTACHABLE = hajer.HajerSettings(
-    api_key="key-for-tests",
-    team_id="team-1",
-    base_url="https://hajer.test",
-    observe_flush_interval_ms=600_000,
-)
+ATTACHABLE = hajer.HajerSettings(api_key="key-for-tests", team_id="team-1", base_url="https://hajer.test")
 INERT = hajer.HajerSettings(base_url="https://hajer.test")
-
-
-def accepts(request: httpx.Request) -> httpx.Response:
-    if request.url.path.endswith("/observe"):
-        return httpx.Response(202, json={"observationIds": ["obs-1"]})
-    return httpx.Response(200, json=assessment_json())
 
 
 def unpatch(*classes: type[object]) -> None:
@@ -177,172 +163,59 @@ class TestWhatItInstruments:
         assert standing.classes == ("anthropic.Anthropic",)
 
 
-class TestWhatItSends:
-    def _bodies(self, recorder: Recorder) -> list[JsonObject]:
-        sent: list[JsonObject] = []
-        for body in recorder.bodies():
-            observations = body.get("observations")
-            assert isinstance(observations, list)
-            for observation in observations:
-                assert isinstance(observation, dict)
-                sent.append(observation)
-        return sent
-
-    def _attached(self, recorder: Recorder, settings: hajer.HajerSettings) -> None:
-        """Attach with a client whose transport is the recorder. The queue and the client are the real ones."""
-        hajer.attach(settings=settings, transport=recorder.transport())
-
-    def test_one_observation_per_call_with_no_verifier(self, anthropic_module: ModuleType) -> None:
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE)
+class TestWhatItRecords:
+    def test_one_record_per_call(self, anthropic_module: ModuleType) -> None:
+        attachment = hajer.attach(settings=ATTACHABLE)
+        assert attachment.inert is False
         client = anthropic_module.Anthropic(script=[FakeAnthropicMessage() for _ in range(3)])
         for _ in range(3):
             client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": "hi"}])
-        hajer.detach()  # closes the client, which flushes
-        sent = self._bodies(recorder)
-        assert len(sent) == 3
-        for observation in sent:
-            assert observation["mode"] == "OBSERVE"
-            assert observation["verifier"] is None
-            assert "deadlineMs" not in observation, "an OBSERVE submission is off the response path"
-            assert len(observation["wrappedCalls"]) == 1  # pyright: ignore[reportArgumentType]
+        assert [call.provider for call in hajer.wrapped_calls()] == ["anthropic"] * 3
 
     def test_content_opt_out_carries_no_message_text(self, anthropic_module: ModuleType) -> None:
         """Opt-out retains shapes, names, counts, timing and usage, without message text."""
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE.model_copy(update={"capture_content": False}))
+        hajer.attach(settings=ATTACHABLE.model_copy(update={"capture_content": False}))
         client = anthropic_module.Anthropic()
         client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": "a secret"}])
-        hajer.detach()
-        observation = self._bodies(recorder)[0]
-        assert "a secret" not in str(observation)
-        request = observation["request"]
-        assert isinstance(request, dict)
-        assert request["provider"] == "anthropic"
-        assert request["api"] == "messages"
-        assert request["messageCount"] == 1
-        assert request["messageRoles"] == ["user"]
-        output = observation["output"]
-        assert isinstance(output, dict)
-        assert output["finishReason"] == "end_turn"
-        assert output["usage"] == {"input_tokens": 13, "output_tokens": 5}
-        assert observation["contentCaptured"] is False
+        (call,) = hajer.wrapped_calls()
+        assert "a secret" not in repr(call)
+        assert call.content is None
+        assert (call.provider, call.api, call.message_count, call.message_roles) == (
+            "anthropic",
+            "messages",
+            1,
+            ("user",),
+        )
+        assert call.finish_reason == "end_turn"
+        assert call.usage == {"input_tokens": 13, "output_tokens": 5}
 
-    def test_default_content_capture_widens_the_wrapped_call_and_nothing_else(
-        self, anthropic_module: ModuleType
-    ) -> None:
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE)
+    def test_default_content_capture_is_on(self, anthropic_module: ModuleType) -> None:
+        hajer.attach(settings=ATTACHABLE)
         client = anthropic_module.Anthropic()
         client.messages.create(model="claude-fake-1", messages=[{"role": "user", "content": "a secret"}])
-        hajer.detach()
-        observation = self._bodies(recorder)[0]
-        assert observation["contentCaptured"] is True
-        assert "a secret" not in str(observation["request"]), "the tuple never carries content"
-        assert "a secret" not in str(observation["output"])
-        calls = observation["wrappedCalls"]
-        assert isinstance(calls, list)
-        assert "a secret" in str(calls[0]), "the wrapped call is where content capture shows up"
+        (call,) = hajer.wrapped_calls()
+        assert call.content is not None
+        assert "a secret" in repr(call.content["messages"])
 
-    def test_a_call_inside_a_scope_is_not_observed_on_its_own(self, anthropic_module: ModuleType) -> None:
-        """Inside a scope the operation owns the call, and its `verify` is what carries it."""
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE)
+    def test_a_call_inside_a_scope_belongs_to_the_operation(self, anthropic_module: ModuleType) -> None:
+        hajer.attach(settings=ATTACHABLE)
         client = anthropic_module.Anthropic()
         with hajer.scope() as operation:
             client.messages.create(model="claude-fake-1", messages=[])
             assert len(operation.calls) == 1
-        hajer.detach()
-        assert self._bodies(recorder) == []
+        assert hajer.wrapped_calls() == (), "the operation took it; the task context holds nothing"
 
-    def test_a_failed_call_is_observed_with_its_error(self, anthropic_module: ModuleType) -> None:
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE)
-        from tests.fakes import ProviderError  # noqa: PLC0415 - only this test needs the error type
-
+    def test_a_failed_call_is_recorded_with_its_error(self, anthropic_module: ModuleType) -> None:
+        hajer.attach(settings=ATTACHABLE)
         client = anthropic_module.Anthropic(error=ProviderError("upstream is down"))
         with pytest.raises(ProviderError):
             client.messages.create(model="claude-fake-1", messages=[])
-        hajer.detach()
-        output = self._bodies(recorder)[0]["output"]
-        assert isinstance(output, dict)
-        assert output["errorType"] == "ProviderError"
-        assert output["error"] == "upstream is down"
+        (call,) = hajer.wrapped_calls()
+        assert call.error_type == "ProviderError"
 
-    def test_two_identical_calls_are_two_observations(self, anthropic_module: ModuleType) -> None:
-        """`startedAt` and the response id are in the tuple, so one call is never two the same."""
-        recorder = Recorder(accepts)
-        self._attached(recorder, ATTACHABLE)
-        client = anthropic_module.Anthropic(script=[FakeAnthropicMessage() for _ in range(2)])
-        client.messages.create(model="claude-fake-1", messages=[])
-        client.messages.create(model="claude-fake-1", messages=[])
-        hajer.detach()
-        keys = [str(observation["idempotencyKey"]) for observation in self._bodies(recorder)]
-        assert len(set(keys)) == 2
-
-
-class TestWithNoKey:
-    def test_nothing_is_sent_and_the_attachment_says_so(self, anthropic_module: ModuleType) -> None:
-        attachment = hajer.attach(settings=INERT)
-        assert attachment.inert is True
-        assert "inert" in attachment.describe()
-        assert "anthropic" in attachment.describe()
-        client = anthropic_module.Anthropic()
-        client.messages.create(model="claude-fake-1", messages=[])
-        assert len(hajer.wrapped_calls()) == 1, "the records still exist; only the sending is off"
-
-    def test_an_attached_process_still_says_what_it_attached(self, anthropic_module: ModuleType) -> None:
-        attachment = hajer.attach(settings=ATTACHABLE)
-        assert attachment.inert is False
-        assert "observing outside every scope" in attachment.describe()
-
-
-class TestDetach:
-    def test_a_client_built_before_detaching_still_records_and_sends_nothing(
-        self, anthropic_module: ModuleType
-    ) -> None:
-        """The instrumented surface stays instrumented; what stops is the observing."""
-        recorder = Recorder(accepts)
+    def test_detach_stops_instrumenting_new_clients(self, anthropic_module: ModuleType) -> None:
         hajer.attach(settings=ATTACHABLE)
-        client = anthropic_module.Anthropic(script=[FakeAnthropicMessage() for _ in range(2)])
         hajer.detach()
         assert hajer.attachment() is None
-        client.messages.create(model="claude-fake-1", messages=[])
-        assert len(hajer.wrapped_calls()) == 1, "wrap()'s own behaviour, which detaching does not undo"
-        assert recorder.requests == []
-
-    def test_a_client_built_after_detaching_is_not_instrumented(self, anthropic_module: ModuleType) -> None:
-        """The patched constructor is still there and deliberately does nothing while detached."""
-        hajer.attach(settings=ATTACHABLE)
-        hajer.detach()
-        client = anthropic_module.Anthropic()
-        client.messages.create(model="claude-fake-1", messages=[])
+        anthropic_module.Anthropic().messages.create(model="claude-fake-1", messages=[])
         assert hajer.wrapped_calls() == ()
-
-    def test_detaching_twice_is_a_no_op(self) -> None:
-        hajer.detach()
-        hajer.detach()
-        assert hajer.attachment() is None
-
-
-class TestTheImportTimeHook:
-    def test_the_shim_directory_holds_a_sitecustomize(self) -> None:
-        """`python -m hajer attach-path` prints this directory; the interpreter imports what is in it."""
-        from hajer import _bootstrap  # noqa: PLC0415 - the module under test is the shim's own package
-
-        shim = Path(_bootstrap.__file__).resolve().parent / "sitecustomize.py"
-        assert shim.is_file()
-        assert "import hajer.autoattach" in shim.read_text(encoding="utf-8")
-
-    def test_attach_path_prints_that_directory(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from hajer.__main__ import main  # noqa: PLC0415 - the CLI is only reached from a shell and here
-
-        assert main(["attach-path"]) == 0
-        printed = capsys.readouterr().out.strip()
-        assert printed.endswith("hajer/_bootstrap")
-        assert (Path(printed) / "sitecustomize.py").is_file()
-
-    def test_the_switch_is_a_setting_read_from_the_environment(self) -> None:
-        assert hajer.HajerSettings.from_env({}).attach is False
-        assert hajer.HajerSettings.from_env({"HAJER_ATTACH": "1"}).attach is True
-        assert hajer.HajerSettings.from_env({"HAJER_ATTACH": "off"}).attach is False

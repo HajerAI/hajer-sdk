@@ -141,12 +141,6 @@ def matched(document: JsonValue, paths: Sequence[Sequence[Segment]]) -> frozense
     return frozenset(hit.path for path in paths for hit in hits(document, path))
 
 
-def without(document: JsonValue, paths: Sequence[Sequence[Segment]]) -> tuple[JsonValue, tuple[str, ...]]:
-    """The document with every value these paths reach removed, and the concrete paths removed."""
-    targets = matched(document, paths)
-    return _rebuild(document, targets, "", None), tuple(sorted(targets))
-
-
 def _rebuild(
     value: JsonValue, targets: frozenset[str], prefix: str, transform: Callable[[str, JsonValue], JsonValue] | None
 ) -> JsonValue:

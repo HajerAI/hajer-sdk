@@ -21,7 +21,6 @@ import pytest
 
 import hajer
 from hajer._stream import AsyncRecordingStream, RecordingStream, StreamRecorder
-from hajer._wire import WrappedCallSummaryIn
 from hajer._wrap import STREAM_USAGE_UNOBSERVED
 from tests.conftest import as_async_message_stream, as_message_stream, as_stream
 from tests.fakes import (
@@ -229,22 +228,18 @@ class TestUsage:
         assert call.usage == {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
         assert call.limitations == ()
 
-    def test_the_limitation_travels_on_the_wire(self) -> None:
-        """A summary that could not observe usage says so to the service, not only to the caller.
+    def test_the_limitation_is_on_the_record(self) -> None:
+        """A record that could not observe usage says so, for the span emitter as much as for the caller.
 
-        Without this the wire is ambiguous in the one place it must not be: an empty `usage` from a
-        stream that was never asked for token counts looks exactly like a call that used none, and the
-        service prices the second and must refuse to price the first. `WrappedCallSummaryIn.limitations`
-        is the field that separates them, and `to_wire()` is what fills it.
+        An empty `usage` from a stream that was never asked for token counts would otherwise look exactly
+        like a call that used none; `limitations` is the field that separates them.
         """
         chunks: list[object] = [FakeChatChunk(choices=[FakeChatStreamChoice(delta=FakeChatDelta(content="hi"))])]
         wrapped = hajer.wrap(FakeOpenAI(chat_script=[FakeStream(chunks)]), settings=QUIET)
         returned = as_stream(wrapped.chat.completions.create(model="gpt-fake-1", messages=[], stream=True))
         assert len(list(returned)) == 1
         (call,) = hajer.wrapped_calls()
-        body = call.to_wire()
-        assert body["limitations"] == [STREAM_USAGE_UNOBSERVED]
-        assert WrappedCallSummaryIn.model_validate(body).limitations == (STREAM_USAGE_UNOBSERVED,)
+        assert call.limitations == (STREAM_USAGE_UNOBSERVED,)
 
 
 class TestRecordingNeverReachesTheCaller:

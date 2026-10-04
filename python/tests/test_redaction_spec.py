@@ -99,11 +99,10 @@ def test_credentials_and_card_security_fields_are_always_denied() -> None:
 @pytest.mark.parametrize("budget", ["REDACT_MAX_NODES", "REDACT_MAX_BYTES", "REDACT_MAX_DEPTH"])
 def test_unscanned_values_are_withheld_when_a_budget_is_exhausted(budget: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_redact, budget, 1)
-    result, report = _redact.redact_submission(
+    result, state = _redact._walk(  # pyright: ignore[reportPrivateUsage]
         {"request": {"raw": "private-unscanned-value"}, "output": {"raw": "private-unscanned-value"}},
-        policy=_redact.load_rules({"version": 1}),
+        _redact.load_rules({"version": 1}),
     )
     assert "private-unscanned-value" not in str(result)
     assert isinstance(result, dict)
-    assert report is not None
-    assert report.degraded is not None
+    assert state.degraded is not None

@@ -93,9 +93,6 @@ Three things about those lines, because they are the whole design:
 
 `assessment.status` is one of `satisfied`, `violated`, `insufficient_evidence` or `unavailable`.
 
-To try one `verify` end to end against a verifier that already exists, see
-[Your first row](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/local-platform.md#your-first-row).
-
 ## Concepts
 
 **`verify` and `observe`.** `verify` is synchronous with your request path: it returns an `Assessment`
@@ -167,8 +164,6 @@ can be captured by wrapping that client's transport in `hajer.CaptureTransport`.
 - [Evals](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/evals.md) — `hajer eval`: ordinary
   promptfoo suites, connected to the workflows, obligations, traces and commits the rest of Hajer sees; and the
   [engine pin](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/evals-engine.md) behind it.
-- [Local platform](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/local-platform.md) —
-  pointing the SDK at a local or self-hosted Hajer platform, and a first `verify` you can run as written.
 - [Development](https://github.com/HajerAI/hajer-sdk/blob/main/python/docs/development.md) — working
   on this package.
 

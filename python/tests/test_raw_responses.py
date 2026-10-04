@@ -103,16 +103,29 @@ async def awaited(value: object) -> object:
     return await cast(Awaitable[object], value) if inspect.isawaitable(value) else value
 
 
+class _Settled:
+    """The call observer, recording every call that settled — what reaches the span emitter."""
+
+    def __init__(self, seen: list[hajer.WrappedCall]) -> None:
+        self.seen = seen
+
+    def opened(self, call: hajer.WrappedCall) -> object:
+        return None
+
+    def settled(self, call: hajer.WrappedCall, handle: object | None) -> None:
+        self.seen.append(call)
+
+
 @pytest.fixture
 def settled() -> Iterator[list[hajer.WrappedCall]]:
-    """Every call handed to the export hooks — what reaches an observation."""
+    """Every call handed to the observer — what reaches the span emitter."""
     seen: list[hajer.WrappedCall] = []
-    _wrap.set_recorded_hook(lambda call, _label: seen.append(call))
+    _wrap.set_call_observer(_Settled(seen))
     yield seen
-    _wrap.set_recorded_hook(None)
+    _wrap.set_call_observer(None)
 
 
-SETTINGS = hajer.HajerSettings(capture_content=True, capture_raw=True, disabled=True)
+SETTINGS = hajer.HajerSettings(capture_content=True, disabled=True)
 REQUEST: JsonObject = {"model": "gpt-5.1", "messages": [{"role": "user", "content": "q"}]}
 
 
@@ -144,8 +157,6 @@ def _answered(call: hajer.WrappedCall) -> None:
     assert call.usage["input_tokens"] == 3
     assert call.content is not None
     assert "the answer" in json.dumps(call.content["output"])
-    assert call.raw is not None
-    assert json.loads(call.raw.response_body)["id"] == "chat-raw"
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -302,5 +313,4 @@ async def test_a_body_that_is_not_json_is_recorded_with_a_limitation_never_dropp
                     assert "hello" in cast(str, at(response, "text")())
     assert len(settled) == 1
     (call,) = settled
-    assert call.raw is None, "no provider document, so no receipt capture"
     assert any(note.startswith("RAW_RESPONSE_UNREADABLE") for note in call.limitations)

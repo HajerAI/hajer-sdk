@@ -96,7 +96,7 @@ def test_a_tracing_module_imported_after_instrument_does_not_stop_client_patchin
     monkeypatch.setitem(sys.modules, "langfuse.openai", ModuleType("langfuse.openai"))
     later = global_client()
     assert getattr(later.chat.completions.create, "__hajer_instrumented__", False)
-    assert (receipt.mode, receipt.linkage) == ("wrap", "FRAMES")
+    assert receipt.mode == "wrap"
 
 
 def test_streamed_tool_calls_from_different_choices_keep_separate_arguments() -> None:

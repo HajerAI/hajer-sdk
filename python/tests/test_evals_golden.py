@@ -255,10 +255,9 @@ class TestUploadAndEgress:
             cache_dir=settings.cache_dir,
             api_key="k",
             team_id="team-1",
-            project_id="proj-1",
             base_url="https://hajer.test",
-            observe_backoff_initial_ms=1,
-            observe_backoff_max_ms=2,
+            eval_upload_backoff_initial_ms=1,
+            eval_upload_backoff_max_ms=2,
         )
         seen: list[httpx.Request] = []
 
@@ -270,7 +269,7 @@ class TestUploadAndEgress:
         assert code == 0
         assert payload is not None
         (request,) = seen
-        assert request.url.path == "/api/teams/team-1/projects/proj-1/eval-runs"
+        assert request.url.path == "/api/teams/team-1/eval-runs"
         assert request.headers["Idempotency-Key"] == payload["runId"]
         assert request.headers["Authorization"] == "Bearer k"
         assert json.loads(request.content)["runId"] == payload["runId"]

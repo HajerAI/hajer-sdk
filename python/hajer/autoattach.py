@@ -4,10 +4,10 @@ One line, first thing in an entry point, safe to leave in a repository forever:
 
     import hajer.autoattach    # noqa: F401 - imported for its effect
 
-With `HAJER_ATTACH=1` in the environment it calls `hajer.attach()`: every provider call made outside a
-`hajer.scope()` becomes one `observe` observation with no verifier (`hajer/_attach.py` says exactly what
-leaves the process). With the variable unset or off it does nothing at all — no instrumentation, no
-client, no socket — so the import is the hook and the variable is the switch.
+With `HAJER_ATTACH=1` in the environment it calls `hajer.attach()`: every provider client the process
+builds records its model calls, and with a key each becomes a span of its own (`hajer/_attach.py` says
+exactly what leaves the process). With the variable unset or off it does nothing at all — no
+instrumentation, no socket — so the import is the hook and the variable is the switch.
 
 `hajer/_bootstrap/sitecustomize.py` is this same import, placed where the interpreter finds it at
 start-up, for a process whose source nobody may touch:

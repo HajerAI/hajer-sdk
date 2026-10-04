@@ -16,7 +16,6 @@ import httpx
 import pytest
 
 import hajer
-from hajer import _proxy
 from hajer.__main__ import doctor, main, redaction_catalog
 from hajer._json import JsonObject
 from hajer._paths import HEALTH_PATH, VERSION
@@ -60,7 +59,7 @@ class TestDoctor:
         monkeypatch.setenv("HAJER_BASE_URL", "https://hajer.test")
         monkeypatch.setenv("HAJER_CAPTURE_CONTENT", "yes")
         monkeypatch.setenv("HAJER_TEAM_ID", "team-1")
-        monkeypatch.delenv("HAJER_TAIL_LIMIT", raising=False)
+        monkeypatch.delenv("HAJER_EVAL_RUNS_KEEP", raising=False)
         monkeypatch.delenv("HAJER_ATTACH", raising=False)
 
         assert doctor(as_json=False, settings=HajerSettings.from_env(), transport=_answers(200)) == 0
@@ -72,10 +71,9 @@ class TestDoctor:
         assert rows["HAJER_BASE_URL"] == ("env", "https://hajer.test")
         assert rows["HAJER_TEAM_ID"] == ("env", "team-1")
         assert rows["HAJER_CAPTURE_CONTENT"] == ("env", "true"), "a boolean is printed one way whatever was set"
-        assert rows["HAJER_TAIL_LIMIT"] == ("default", "50")
+        assert rows["HAJER_EVAL_RUNS_KEEP"] == ("default", "20")
         assert rows["HAJER_ATTACH"] == ("default", "false")
         assert f"hajer {VERSION}" in printed
-        assert "generated from" in printed, "the wire source, so a stale snapshot is visible"
         assert redaction_catalog() in printed
 
     def test_the_key_is_never_printed(
@@ -170,26 +168,6 @@ class TestTheSubcommand:
         printed = capsys.readouterr().out
         assert "no answer" in printed
         assert "setting" in printed
-
-    def test_proxy_is_wired_into_the_command_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`python -m hajer proxy …` is `hajer._proxy.main`, with its own flags handed over unparsed.
-
-        Each half believed the other owned this line and neither wrote it, so the proxy existed and
-        had no spelling anyone would type. The claim is the one that matters: the subcommand does not
-        interpret the proxy's flags — `--upstream`, `--listen`, the repeatable header flags — it passes
-        them through, so the proxy's own parser stays the single definition of them.
-        """
-        seen: list[list[str]] = []
-
-        def record(argv: object = None) -> int:
-            assert isinstance(argv, list)
-            seen.append(cast(list[str], argv))
-            return 0
-
-        monkeypatch.setattr(_proxy, "main", record)
-        flags = ["--upstream", "https://api.anthropic.com", "--listen", "127.0.0.1:8091", "--strip-header", "x-trace"]
-        assert main(["proxy", *flags]) == 0
-        assert seen == [flags]
 
 
 def _answered(*_: object, **__: object) -> int:

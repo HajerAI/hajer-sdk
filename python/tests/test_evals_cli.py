@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-import httpx
 import pytest
 
 from hajer._json import JsonObject, JsonValue
@@ -401,24 +400,6 @@ class TestUpload:
         assert "the payload is kept at" in err(rt)
         rt = runtime(tmp_path, FakeEngine(exit_code=100, document=results_document(success=False)), upload=refused)
         assert _cli.main(["--upload"], settings=settings, runtime=rt) == 100
-
-    def test_the_project_id_flag_reaches_the_upload(
-        self, tmp_path: Path, project: Path, settings: HajerSettings
-    ) -> None:
-        seen: list[object] = []
-
-        def recording(payload: JsonObject, **kwargs: object) -> UploadReceipt:
-            seen.append(kwargs.get("project_id"))
-            return UploadReceipt("uploaded", 201, None, 1, ())
-
-        rt = runtime(
-            tmp_path,
-            FakeEngine(),
-            upload=recording,
-            transport=httpx.MockTransport(lambda _request: httpx.Response(201)),
-        )
-        _cli.main(["--upload", "--project-id", "proj-9"], settings=settings, runtime=rt)
-        assert seen == ["proj-9"]
 
 
 def test_the_console_script_hands_eval_to_the_runner() -> None:

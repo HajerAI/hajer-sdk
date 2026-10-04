@@ -231,16 +231,6 @@ class TestGoogleGenai:
     def test_an_object_that_is_not_a_genai_client_is_left_alone(self) -> None:
         assert _targets_genai.instrument(types.SimpleNamespace(models=object()), QUIET) == 0
 
-    def test_a_raw_capture_is_refused_for_a_library_the_service_cannot_read(self) -> None:
-        """`HAJER_CAPTURE_RAW` names three provider wires. This is not one, and the record says so."""
-        loud = QUIET.model_copy(update={"capture_content": True, "capture_raw": True})
-        client = hajer.wrap(FakeGenaiClient(), settings=loud)
-        client.models.generate_content(model="gemini-2.5-pro", contents="hi")
-        (call,) = hajer.wrapped_calls()
-        assert call.raw is None
-        assert len(call.limitations) == 1
-        assert "not one of the three provider wires" in call.limitations[0]
-
 
 class TestRecordingNeverReachesTheCaller:
     def test_recording_failure_never_reaches_the_caller(self, monkeypatch: pytest.MonkeyPatch) -> None:

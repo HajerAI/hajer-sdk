@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 import hajer
-from hajer import _http_capture, _payload
+from hajer import _http_capture
 from hajer._json import JsonObject, JsonValue
 from hajer._transport import USER_AGENT
 
@@ -41,7 +41,7 @@ CHAT: JsonObject = {
     "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
 }
-SETTINGS = hajer.HajerSettings(capture_content=True, capture_raw=True, disabled=True)
+SETTINGS = hajer.HajerSettings(capture_content=True, disabled=True)
 
 
 def _respond(request: httpx.Request) -> httpx.Response:
@@ -87,13 +87,12 @@ async def test_an_embedding_is_recorded_as_metadata_and_never_as_vectors(
     assert (call.provider, call.api, call.model) == ("openai", "embeddings", "text-embedding-3-small")
     assert call.message_count == (1 if isinstance(given, str) else 2)
     assert call.usage["input_tokens"] == 4
-    assert call.raw is None, "a vector is not a capture: no raw document, even with raw capture on"
     assert call.content == {"output": {"vectors": 2, "dimensions": 3}}, "metadata only: no input text either"
-    sent = json.dumps([call.to_wire(), _payload.attach_output(call), _payload.attach_request(call)])
-    assert "0.125" not in sent, "no vector value leaves the process"
-    assert "one query" not in sent, "the embedded text does not leave the process"
-    assert "first" not in sent
-    assert _payload.attach_output(call)["embedding"] == {"vectors": 2, "dimensions": 3}
+    recorded = repr(call) + json.dumps(call.content)
+    assert "0.125" not in recorded, "no vector value is recorded"
+    assert "one query" not in recorded, "the embedded text is not recorded"
+    assert "first" not in recorded
+    assert call.embedding == (2, 3)
     assert any("vector" in limitation for limitation in call.limitations)
 
 
@@ -104,8 +103,8 @@ def test_an_embedding_with_content_capture_off_keeps_its_shape_and_not_its_input
         at(provider, "embeddings.create")(model="text-embedding-3-small", input="a private query")
     (call,) = operation.calls
     assert call.content is None
-    assert "a private query" not in json.dumps(call.to_wire())
-    assert _payload.attach_output(call)["embedding"] == {"vectors": 2, "dimensions": 3}
+    assert "a private query" not in repr(call)
+    assert call.embedding == (2, 3)
 
 
 # ── HTTP capture ────────────────────────────────────────────────────────────────────────────────
@@ -154,12 +153,12 @@ async def test_an_outbound_http_call_is_recorded_when_http_capture_is_on() -> No
     assert call.request_settings["url"] == "http://exa.invalid/search"
     assert call.caller_frames[0].qualname == "app_search"
     assert call.request_settings["status"] == 200
-    assert call.content is None, "no body leaves the process, the request's or the response's"
-    sent = json.dumps([call.to_wire(), _payload.attach_request(call), _payload.attach_output(call)])
-    assert "who" not in sent
-    assert "example.com/a" not in sent
-    assert "SECRET-QUERY" not in sent, "a query string can carry a credential"
-    assert "SECRET-HEADER" not in sent, "headers are never recorded"
+    assert call.content is None, "no body is recorded, the request's or the response's"
+    recorded = repr(call)
+    assert "who" not in recorded
+    assert "example.com/a" not in recorded
+    assert "SECRET-QUERY" not in recorded, "a query string can carry a credential"
+    assert "SECRET-HEADER" not in recorded, "headers are never recorded"
 
 
 @pytest.mark.parametrize(
@@ -293,8 +292,7 @@ def test_a_stream_helper_is_recorded_once_with_http_capture_on(monkeypatch: pyte
 
 
 def test_a_streamed_model_request_captured_at_the_transport_carries_its_id_and_answer() -> None:
-    """A streamed call recorded only at the transport kept its bytes and nothing it said — no response
-    id, no text — so a span of the same call could not be matched to it (`_claims`)."""
+    """A streamed call recorded at the transport carries what it said: its response id, its text, its usage."""
     events: list[JsonObject] = [
         {
             "id": "chatcmpl-s1",
