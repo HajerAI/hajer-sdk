@@ -18,6 +18,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -48,12 +49,73 @@ REDACT_MAX_DEPTH: Final[int] = 64
 #: reason: past it the scan costs more than the value is worth and the honest answer is "not scanned".
 REDACT_MAX_STRING_CHARS: Final[int] = 65_536
 
+#: What one stable id in a test's reserved `metadata.hajer` may be (`hajer.evals._metadata`): a workflow, obligation,
+#: component or source-trace id of at most 128 characters — the platform's own bound on a workflow key, so an id the
+#: eval declares is one the platform can store. A schema constant like the four above, not a budget a team tunes.
+ID_MAX_CHARS: Final[int] = 128
+
 #: What one environment tag may be (`HAJER_ENVIRONMENT`): lower-case letters, digits and dashes, a letter or digit
 #: first, at most 64 characters — the backend's own pattern for `VerifyIn.environment`, so a tag this process sends is
 #: one the service stores. A value outside it is dropped rather than sent: the service would refuse the whole flush.
 ENVIRONMENT_PATTERN: Final[str] = r"^[a-z0-9][a-z0-9-]{0,63}$"
 #: What `doctor` prints for a `HAJER_ENVIRONMENT` that was set and dropped.
 ENVIRONMENT_IGNORED: Final[str] = "ignored: invalid"
+#: The environment tag every span and observation carries while the application runs under `hajer eval`.
+#: Production and eval traces are the same shape; this tag, and the `hajer.eval.*` attributes, are the difference.
+EVAL_ENVIRONMENT: Final[str] = "eval"
+#: The engine's phone-home switches, every one of them off while `hajer eval` runs it: product analytics, the
+#: update check, result sharing, remote test generation and the share-by-email prompt. `tests/test_evals_golden.py`
+#: proves it at the socket; this tuple is what `eval_engine_environment` sets and what the unit test asserts.
+PROMPTFOO_DISABLE_FLAGS: Final[tuple[str, ...]] = (
+    "PROMPTFOO_DISABLE_TELEMETRY",
+    "PROMPTFOO_DISABLE_UPDATE",
+    "PROMPTFOO_DISABLE_SHARING",
+    "PROMPTFOO_DISABLE_REMOTE_GENERATION",
+    "PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION",
+    "PROMPTFOO_DISABLE_SHARE_EMAIL_REQUEST",
+)
+#: The CI variables `hajer eval` reads for an eval run's Git context (`hajer.evals._git`), and no other: a
+#: whitelist, so a CI job's secrets are never swept up with them. GitHub Actions, GitLab CI, CircleCI,
+#: Buildkite, and the generic `CI` flag.
+CI_VARIABLES: Final[tuple[str, ...]] = (
+    "CI",
+    "GITHUB_ACTIONS",
+    "GITHUB_SHA",
+    "GITHUB_REF",
+    "GITHUB_REF_NAME",
+    "GITHUB_HEAD_REF",
+    "GITHUB_BASE_REF",
+    "GITHUB_RUN_ID",
+    "GITHUB_REPOSITORY",
+    "GITHUB_SERVER_URL",
+    "GITLAB_CI",
+    "CI_COMMIT_SHA",
+    "CI_COMMIT_REF_NAME",
+    "CI_MERGE_REQUEST_IID",
+    "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME",
+    "CI_MERGE_REQUEST_TARGET_BRANCH_NAME",
+    "CI_PIPELINE_ID",
+    "CI_PROJECT_URL",
+    "CIRCLECI",
+    "CIRCLE_SHA1",
+    "CIRCLE_BRANCH",
+    "CIRCLE_PULL_REQUEST",
+    "CIRCLE_BUILD_NUM",
+    "CIRCLE_REPOSITORY_URL",
+    "BUILDKITE",
+    "BUILDKITE_COMMIT",
+    "BUILDKITE_BRANCH",
+    "BUILDKITE_PULL_REQUEST",
+    "BUILDKITE_PULL_REQUEST_BASE_BRANCH",
+    "BUILDKITE_BUILD_ID",
+    "BUILDKITE_REPO",
+)
+
+
+def _default_cache_dir() -> str:
+    """`~/.cache/hajer`: what a constructor gets; `from_env` honours `$XDG_CACHE_HOME` before it."""
+    return str(Path.home() / ".cache" / "hajer")
+
 
 _TRUE = frozenset({"1", "true", "t", "yes", "y", "on"})
 _FALSE = frozenset({"0", "false", "f", "no", "n", "off"})
@@ -192,6 +254,54 @@ class HajerSettings(BaseModel):
     #: `INGEST_OBSERVATIONS_PAGE_MAX`, so this is the smaller of the two intentions.
     tail_limit: int = Field(default=50, gt=0)
 
+    # ── telemetry (`hajer.workflow` / `component` / `tool`) ─────────────────────────────────────
+    #: `HAJER_OTLP_ENDPOINT` — where the span emitter exports when the process has no OpenTelemetry SDK
+    #: provider of its own (`hajer/_telemetry.py`). Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`, the
+    #: standard variable, so an application already pointed at a collector needs nothing more. Absent, and
+    #: with no global provider, the emitter is a no-op. `hajer eval` sets it to the engine's loopback receiver.
+    otlp_endpoint: str | None = None
+    #: `HAJER_TRACE_FLUSH_TIMEOUT_MS` — how long `flush()` waits for exported spans to leave. Two seconds:
+    #: an eval provider flushes before it answers, so that the trace is there when the row is graded.
+    trace_flush_timeout_ms: int = Field(default=2_000, gt=0)
+
+    # ── evals (`hajer eval`) ────────────────────────────────────────────────────────────────────
+    #: `HAJER_PROJECT_ID` — the Hajer project an eval run is uploaded to. Absent → `--upload` is skipped.
+    project_id: str | None = None
+    #: `HAJER_CACHE_DIR` — where `hajer eval` installs the pinned engine (`engine/<lockfile digest>/`) and keeps
+    #: run directories (`runs/<run id>/`). `$XDG_CACHE_HOME/hajer`, else `~/.cache/hajer`.
+    cache_dir: str = Field(default_factory=_default_cache_dir)
+    #: `HAJER_EVAL_INSTALL_TIMEOUT_S` — how long one `npm ci` of the engine may take. Ten minutes covers a
+    #: cold cache on a slow CI runner; a hung registry is reported rather than waited on forever.
+    eval_install_timeout_s: int = Field(default=600, gt=0)
+    #: `HAJER_EVAL_RUNS_KEEP` — run directories kept under the cache; older ones are removed at the start of a run.
+    eval_runs_keep: int = Field(default=20, gt=0)
+    #: `HAJER_EVAL_OTLP_PORT` — the loopback port the engine's trace receiver listens on. 4318 is OTLP/HTTP's
+    #: own; when it is busy `hajer eval` picks a free one and tells the engine and the emitter the same number.
+    eval_otlp_port: int = Field(default=4318, gt=0)
+    #: `HAJER_EVAL_UPLOAD_ATTEMPTS` — sends of one run's payload before the upload is reported failed.
+    eval_upload_attempts: int = Field(default=3, gt=0)
+    #: `HAJER_EVAL_UPLOAD_MAX_BYTES` — the payload's ceiling; past it the spans are dropped, then the outputs,
+    #: before the upload is refused locally. 8 MiB: a run's spans are the bulk, and they are allow-listed first.
+    eval_upload_max_bytes: int = Field(default=8_388_608, gt=0)
+    #: `HAJER_EVAL_UPLOAD_DEADLINE_MS` — the deadline of one upload request.
+    eval_upload_deadline_ms: int = Field(default=30_000, gt=0)
+    #: `HAJER_EVAL_OUTPUT_MAX_CHARS` — characters of one result's output kept in the payload, after redaction.
+    eval_output_max_chars: int = Field(default=4_096, gt=0)
+    #: `HAJER_EVAL_SPANS_MAX` — spans of one result's trace kept in the payload; the summary counts them all.
+    eval_spans_max: int = Field(default=256, gt=0)
+    #: `HAJER_EVAL_GIT_TIMEOUT_S` — how long one `git` read for the run's commit context may take. Five seconds
+    #: is generous for `rev-parse` and `status`; a hung filesystem is reported as no context, not waited on.
+    eval_git_timeout_s: int = Field(default=5, gt=0)
+    #: `HAJER_EVAL_RUN_ID` — set by `hajer eval` for the engine process it starts, and read back by the hook and
+    #: the span emitter inside it. Never set by hand.
+    eval_run_id: str | None = None
+    #: `HAJER_EVAL_WORKFLOW` — `hajer eval --workflow`, carried to the hook that filters the suite.
+    eval_workflow: str | None = None
+    #: `HAJER_EVAL_OBLIGATIONS` — `hajer eval --obligation …`, comma-separated, carried the same way.
+    eval_obligations: str | None = None
+    #: `HAJER_EVAL_HOOK_REPORT` — where the hook writes what it classified, filtered and warned about.
+    eval_hook_report: str | None = None
+
     # ── kill switch ─────────────────────────────────────────────────────────────────────────────
     #: `HAJER_DISABLED` — inert regardless of the key.
     disabled: bool = False
@@ -269,8 +379,37 @@ class HajerSettings(BaseModel):
             attach=_boolean(source, "HAJER_ATTACH", default=False),
             tail_interval_ms=_positive_int(source, "HAJER_TAIL_INTERVAL_MS", 1_000),
             tail_limit=_positive_int(source, "HAJER_TAIL_LIMIT", 50),
+            otlp_endpoint=_string(source, "HAJER_OTLP_ENDPOINT") or _string(source, "OTEL_EXPORTER_OTLP_ENDPOINT"),
+            trace_flush_timeout_ms=_positive_int(source, "HAJER_TRACE_FLUSH_TIMEOUT_MS", 2_000),
+            project_id=_string(source, "HAJER_PROJECT_ID"),
+            cache_dir=_string(source, "HAJER_CACHE_DIR")
+            or (
+                str(Path(xdg) / "hajer")
+                if (xdg := _string(source, "XDG_CACHE_HOME")) is not None
+                else _default_cache_dir()
+            ),
+            eval_install_timeout_s=_positive_int(source, "HAJER_EVAL_INSTALL_TIMEOUT_S", 600),
+            eval_runs_keep=_positive_int(source, "HAJER_EVAL_RUNS_KEEP", 20),
+            eval_otlp_port=_positive_int(source, "HAJER_EVAL_OTLP_PORT", 4318),
+            eval_upload_attempts=_positive_int(source, "HAJER_EVAL_UPLOAD_ATTEMPTS", 3),
+            eval_upload_max_bytes=_positive_int(source, "HAJER_EVAL_UPLOAD_MAX_BYTES", 8_388_608),
+            eval_upload_deadline_ms=_positive_int(source, "HAJER_EVAL_UPLOAD_DEADLINE_MS", 30_000),
+            eval_output_max_chars=_positive_int(source, "HAJER_EVAL_OUTPUT_MAX_CHARS", 4_096),
+            eval_spans_max=_positive_int(source, "HAJER_EVAL_SPANS_MAX", 256),
+            eval_git_timeout_s=_positive_int(source, "HAJER_EVAL_GIT_TIMEOUT_S", 5),
+            eval_run_id=_string(source, "HAJER_EVAL_RUN_ID"),
+            eval_workflow=_string(source, "HAJER_EVAL_WORKFLOW"),
+            eval_obligations=_string(source, "HAJER_EVAL_OBLIGATIONS"),
+            eval_hook_report=_string(source, "HAJER_EVAL_HOOK_REPORT"),
             disabled=_boolean(source, "HAJER_DISABLED", default=False),
         )
+
+    @property
+    def eval_obligation_ids(self) -> tuple[str, ...]:
+        """`HAJER_EVAL_OBLIGATIONS` as the ids it names, blanks dropped."""
+        if self.eval_obligations is None:
+            return ()
+        return tuple(item.strip() for item in self.eval_obligations.split(",") if item.strip())
 
 
 #: Every field of `HajerSettings` and the `HAJER_*` variable that fills it, in declaration order. One
@@ -305,6 +444,23 @@ VARIABLES: Final[tuple[tuple[str, str], ...]] = (
     ("attach", "HAJER_ATTACH"),
     ("tail_interval_ms", "HAJER_TAIL_INTERVAL_MS"),
     ("tail_limit", "HAJER_TAIL_LIMIT"),
+    ("otlp_endpoint", "HAJER_OTLP_ENDPOINT"),
+    ("trace_flush_timeout_ms", "HAJER_TRACE_FLUSH_TIMEOUT_MS"),
+    ("project_id", "HAJER_PROJECT_ID"),
+    ("cache_dir", "HAJER_CACHE_DIR"),
+    ("eval_install_timeout_s", "HAJER_EVAL_INSTALL_TIMEOUT_S"),
+    ("eval_runs_keep", "HAJER_EVAL_RUNS_KEEP"),
+    ("eval_otlp_port", "HAJER_EVAL_OTLP_PORT"),
+    ("eval_upload_attempts", "HAJER_EVAL_UPLOAD_ATTEMPTS"),
+    ("eval_upload_max_bytes", "HAJER_EVAL_UPLOAD_MAX_BYTES"),
+    ("eval_upload_deadline_ms", "HAJER_EVAL_UPLOAD_DEADLINE_MS"),
+    ("eval_output_max_chars", "HAJER_EVAL_OUTPUT_MAX_CHARS"),
+    ("eval_spans_max", "HAJER_EVAL_SPANS_MAX"),
+    ("eval_git_timeout_s", "HAJER_EVAL_GIT_TIMEOUT_S"),
+    ("eval_run_id", "HAJER_EVAL_RUN_ID"),
+    ("eval_workflow", "HAJER_EVAL_WORKFLOW"),
+    ("eval_obligations", "HAJER_EVAL_OBLIGATIONS"),
+    ("eval_hook_report", "HAJER_EVAL_HOOK_REPORT"),
     ("disabled", "HAJER_DISABLED"),
 )
 #: Every boolean setting. `doctor` prints them, and one test asserts that each reads every spelling.
@@ -337,6 +493,51 @@ class SettingSource:
     variable: str
     value: str
     source: str
+
+
+def eval_engine_environment(
+    settings: HajerSettings,
+    *,
+    run_id: str,
+    run_dir: str,
+    otlp_port: int,
+    python_executable: str,
+    workflow: str | None = None,
+    obligations: tuple[str, ...] = (),
+) -> dict[str, str]:
+    """The environment `hajer eval` starts the engine in: this process's, minus the Hajer key, plus the switches.
+
+    The key stays with the parent, which uploads: the application under test is then inert towards Hajer, so an
+    eval never records observations as if they were traffic. `PROMPTFOO_PYTHON` is this interpreter, so the hook
+    and the Python providers import the same `hajer` that started the run; the config and cache directories are
+    the run's own, never `~/.promptfoo`; and the emitter is pointed at the engine's loopback receiver.
+    """
+    environment = {key: value for key, value in os.environ.items() if key != "HAJER_API_KEY"}
+    endpoint = f"http://127.0.0.1:{otlp_port}"
+    environment.update(dict.fromkeys(PROMPTFOO_DISABLE_FLAGS, "1"))
+    environment.update(
+        {
+            "NO_UPDATE_NOTIFIER": "1",
+            "PROMPTFOO_CONFIG_DIR": str(Path(run_dir) / "promptfoo"),
+            "PROMPTFOO_CACHE_PATH": str(Path(settings.cache_dir) / "promptfoo-cache"),
+            "PROMPTFOO_PYTHON": python_executable,
+            # Only Hajer's own variable: the engine's OpenTelemetry SDK reads `OTEL_EXPORTER_OTLP_ENDPOINT` as a
+            # complete URL and would post to the receiver's root, which answers 404 on every flush.
+            "HAJER_OTLP_ENDPOINT": endpoint,
+            "HAJER_ENVIRONMENT": EVAL_ENVIRONMENT,
+            "HAJER_EVAL_RUN_ID": run_id,
+            "HAJER_EVAL_WORKFLOW": workflow or "",
+            "HAJER_EVAL_OBLIGATIONS": ",".join(obligations),
+            "HAJER_EVAL_HOOK_REPORT": str(Path(run_dir) / "hook-report.json"),
+        }
+    )
+    return environment
+
+
+def ci_environment_snapshot(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The `CI_VARIABLES` this process has, and nothing else: what `hajer.evals._git` reads for an eval run."""
+    source: Mapping[str, str] = os.environ if env is None else env
+    return {name: value for name in CI_VARIABLES if (value := _string(source, name)) is not None}
 
 
 def settings_sources(settings: HajerSettings, env: Mapping[str, str] | None = None) -> tuple[SettingSource, ...]:

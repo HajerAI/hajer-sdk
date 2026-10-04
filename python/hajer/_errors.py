@@ -13,6 +13,9 @@ all. The exceptions here exist for the two moments where silence would be worse 
   would rather see a stack trace than an `unavailable` status.
 * `BodyOverBoundError` — internal; the client turns it into `unavailable{BODY_OVER_BOUND}`. It
   never reaches application code through `verify` or `observe`.
+* `EvalMetadataError` — `hajer eval` only. Raised inside the eval engine's `beforeAll` hook process
+  when a test's `metadata.hajer` is malformed, so the run stops before a single provider call and the
+  terminal names the test. That process is the engine's, never the customer's application.
 """
 
 from __future__ import annotations
@@ -60,6 +63,16 @@ class BodyOverBoundError(HajerError):
         super().__init__(f"body is {size} bytes, over the {limit}-byte bound; nothing was sent")
         self.size = size
         self.limit = limit
+
+
+class EvalMetadataError(HajerError):
+    """A test's reserved `metadata.hajer` is malformed; the eval did not run. Raised only in the engine's hook process."""
+
+    code = "HAJER_INVALID_EVAL_METADATA"
+
+    def __init__(self, errors: tuple[str, ...]) -> None:
+        super().__init__(f"{self.code}: " + "; ".join(errors))
+        self.errors = errors
 
 
 class AssessmentUnavailableError(HajerError):

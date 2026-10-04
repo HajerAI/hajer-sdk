@@ -590,8 +590,9 @@ in rather than guess. If you need a reversible installation, use `hajer.instrume
 
 ## The command line
 
-`python -m hajer` has no configuration file. Its subcommands are `attach-path` (above), `doctor`, `tail`
-and `proxy`.
+`hajer` (the console script; `python -m hajer` is the same program) has no configuration file. Its subcommands
+are `attach-path` (above), `doctor`, `tail`, `proxy` and `eval`, the eval runner, which has its own page:
+[evals.md](evals.md).
 
 ### `python -m hajer doctor`
 
@@ -787,6 +788,10 @@ read; you can also construct `HajerSettings(...)` yourself and pass it to the cl
 | `HAJER_ATTACH` | `0` | The switch the import-time hook reads: with it on, `import hajer.autoattach` (the one line, or the `sitecustomize` shim) attaches this process. `hajer.attach()` in code does not consult it. |
 | `HAJER_TAIL_INTERVAL_MS` | `1000` | How often `python -m hajer tail --follow` asks for newer rows. |
 | `HAJER_TAIL_LIMIT` | `50` | Rows per `tail` page. The server clips it to its own page bound. |
+| `HAJER_OTLP_ENDPOINT` | `OTEL_EXPORTER_OTLP_ENDPOINT`, else absent | Where `hajer.workflow` / `component` / `tool` spans are exported when the process has no OpenTelemetry SDK provider of its own ([evals.md](evals.md)). Absent, and with no provider, the emitter is a no-op. |
+| `HAJER_TRACE_FLUSH_TIMEOUT_MS` | `2000` | How long a flush of the span emitter waits for exported spans to leave, and the bound on one export request to the endpoint; an eval provider flushes before it answers. |
+| `HAJER_PROJECT_ID` | absent | The Hajer project `hajer eval --upload` sends a run to. |
+| `HAJER_CACHE_DIR` | `$XDG_CACHE_HOME/hajer`, else `~/.cache/hajer` | Where `hajer eval` installs the pinned engine and keeps run directories. The remaining `HAJER_EVAL_*` settings are in [evals.md](evals.md#settings). |
 | `HAJER_DISABLED` | `0` | Inert regardless of the key. The kill switch. |
 
 Booleans accept `1/0`, `true/false`, `t/f`, `yes/no`, `y/n`, `on/off`, any case — the same spellings for

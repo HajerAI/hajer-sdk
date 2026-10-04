@@ -19,11 +19,11 @@ sync:
 
 # Format with ruff
 fmt:
-    uv run ruff format hajer tests scripts
+    uv run ruff format hajer tests scripts examples
 
 # Lint and auto-fix with ruff
 lint:
-    uv run ruff check hajer tests scripts --fix
+    uv run ruff check hajer tests scripts examples --fix
 
 # Type check with basedpyright (strict, no `Any`)
 typecheck:
@@ -63,10 +63,23 @@ contract-check:
 build:
     uv build --out-dir dist
 
+# Pin the eval engine to one exact upstream promptfoo version: rewrites hajer/evals/engine/package.json and
+# regenerates its package-lock.json (`--package-lock-only`, so a lock made here records every platform's optional
+# packages and `npm ci` installs it on Linux CI too). Needs Node >= 22.22 and npm on PATH; then run the golden
+# test (`just test --engine -m engine`) and note the bump in CHANGELOG.md and docs/evals-engine.md.
+evals-pin version:
+    cd hajer/evals/engine && node -e "const p=require('./package.json'); p.dependencies.promptfoo='{{ version }}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n')"
+    cd hajer/evals/engine && rm -f package-lock.json && npm install --package-lock-only --ignore-scripts --no-audit --no-fund --loglevel=error
+    uv run python -c "import hajer.evals._engine as e; print('pinned', e.pinned().version)"
+
+# Install the pinned eval engine into the cache without running an eval (what the first `hajer eval` does).
+evals-engine:
+    uv run hajer eval --install-only
+
 # What CI runs: non-mutating checks + tests
 ci:
     uv lock --check
-    uv run ruff format --check hajer tests scripts
-    uv run ruff check hajer tests scripts
+    uv run ruff format --check hajer tests scripts examples
+    uv run ruff check hajer tests scripts examples
     just typecheck deadcode deps contract-check
     just test

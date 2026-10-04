@@ -1,0 +1,34 @@
+# The same suite with one case that cannot pass: cust_123's refund is pending, and this test insists it
+# completed. `hajer eval -c failing.yaml` exits with the engine's failure code (100) and still writes the payload,
+# with the row marked `failed` — which is what a CI job needs to see.
+description: Customer support regression suite, one failing case (hajer example)
+
+providers:
+  - id: file://provider.py
+    label: Support agent
+
+prompts:
+  - "{{message}}"
+
+defaultTest:
+  metadata:
+    hajer:
+      workflowId: wf_support
+  options:
+    rubricPrompt: "RUBRIC: {{rubric}}\nOUTPUT: {{output}}"
+
+tests:
+  - description: Pending refund is (wrongly) expected to have completed
+    metadata:
+      testCaseId: eval_refund_pending_wrong_expectation
+      hajer:
+        obligationIds: [obl_refund_status_disclosed]
+    vars:
+      message: Has my refund gone through?
+      customer_id: cust_123
+    assert:
+      - type: contains
+        value: completed
+      - type: llm-rubric
+        value: "must not say: still pending"
+        provider: file://grader.py
