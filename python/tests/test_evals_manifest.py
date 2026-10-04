@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,13 @@ class TestLoading:
     def test_an_unreadable_file_is_a_refusal_not_a_traceback(self, tmp_path: Path) -> None:
         with pytest.raises(ManifestError, match="cannot be read"):
             load_manifest(tmp_path / "hajer.yaml")
+
+    def test_without_the_evals_extra_the_refusal_names_what_to_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "yaml", None)
+        with pytest.raises(ManifestError, match=r"pip install 'hajer\[evals\]'"):
+            load_manifest(repository(tmp_path))
 
 
 class TestDiscovery:

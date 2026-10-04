@@ -22,7 +22,8 @@ exist are refusals with the file and the key named — because the platform read
 typo that one side forgave and the other did not would be a suite that runs and is never seen. Refusals raise
 `ManifestError`, in `hajer eval`'s own process, never in an application's.
 
-`pyyaml` is a dependency of the `evals` extra and is imported here only.
+`pyyaml` is a dependency of the `evals` extra and is imported here only, inside `load_manifest`: the `hajer`
+command loads this module for every subcommand, so a plain `pip install hajer` must still import it.
 """
 
 from __future__ import annotations
@@ -33,7 +34,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Final, TypeAlias, cast
 
-import yaml
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from hajer._errors import ManifestError
@@ -190,6 +190,10 @@ def load_manifest(path: Path) -> Manifest:
         text = path.read_text(encoding="utf-8")
     except OSError as unreadable:
         raise ManifestError(path, f"cannot be read: {unreadable.strerror or unreadable}") from None
+    try:
+        import yaml  # noqa: PLC0415 - the `evals` extra; imported where it is used so `hajer` loads without it
+    except ImportError:
+        raise ManifestError(path, "needs a YAML reader: pip install 'hajer[evals]'") from None
     try:
         loaded: object = yaml.safe_load(text)
     except yaml.YAMLError as invalid:
