@@ -1,10 +1,11 @@
 # CLAUDE.md — python/
 
-Guidance for contributors and coding agents working in `python/`. `README.md` and `docs/` are the
-user-facing documentation; this file has the rules. Most of them are **enforced** — ruff and
-basedpyright (`pyproject.toml`), vulture, deptry and the lockfile check, all in `just check` and in
-`.github/workflows/python.yml`. When a gate fails, fix the code to match the
-convention; do not loosen the gate.
+Guidance for contributors and coding agents working in `python/`. Customer documentation lives at
+[docs.hajer.ai](https://docs.hajer.ai) (source `HajerAI/hajer-docs`, the monorepo's `docs-site/`), not here:
+a change to the public surface updates the matching page there. `CONTRIBUTING.md` has the workflow;
+this file has the rules. Most of them are **enforced** — ruff and basedpyright (`pyproject.toml`),
+vulture, deptry and the lockfile check, all in `just check` and in `.github/workflows/python.yml`. When
+a gate fails, fix the code to match the convention; do not loosen the gate.
 
 ## Commands (run from `python/`)
 
@@ -88,8 +89,8 @@ provider call free of everything that exports.
 - **No provider import, ever.** `openai` and `anthropic` are banned imports. `wrap()` finds surfaces
   by attribute on the object it is handed.
 - **Every bound is a setting.** No numeric limit is spelled as a literal outside `_settings.py`.
-  A new bound is a `HajerSettings` field, a `HAJER_*` variable, a row in the settings table in
-  `docs/reference.md`, and a default the docs explain.
+  A new bound is a `HajerSettings` field, a `HAJER_*` variable, a row in the settings table on
+  docs.hajer.ai (`docs/telemetry/configuration.md` in `HajerAI/hajer-docs`), and a default the docs explain.
 - **No network in tests.** The transport seam is `httpx.MockTransport` and the providers are fakes in
   `tests/fakes.py`. A test that would open a socket is a test that does not belong here — with one
   exception, on loopback only, and marked: a test that can only make its claim with a socket carries

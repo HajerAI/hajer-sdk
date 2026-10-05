@@ -1,7 +1,7 @@
 """`HajerSettings` — every bound the SDK obeys, each one a field with an environment variable.
 
 Nothing in this package spells a limit as a literal anywhere but here: nothing
-is hard-coded. Each default is explained in `README.md` under *Settings*, with what would make
+is hard-coded. Each default is explained on docs.hajer.ai under *Configuration*, with what would make
 you change it. `from_env` is the **only** place in the SDK that reads the process environment; the
 ruff ban on `os.environ` / `os.getenv` (`pyproject.toml`) keeps it that way.
 

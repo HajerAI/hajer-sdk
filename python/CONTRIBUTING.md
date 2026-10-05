@@ -1,7 +1,11 @@
-# Developing the Python SDK
+# Contributing to the Python SDK
+
+Customer documentation lives at [docs.hajer.ai](https://docs.hajer.ai) (source: `HajerAI/hajer-docs`,
+the monorepo's `docs-site/`). A change to the public API, a setting, a CLI flag or `hajer.yaml` updates the
+matching page there in the same piece of work.
 
 Everything runs from `python/`, with [uv](https://docs.astral.sh/uv/) and
-[just](https://github.com/casey/just). [`CLAUDE.md`](../CLAUDE.md) has the conventions and the rules the
+[just](https://github.com/casey/just). [`CLAUDE.md`](CLAUDE.md) has the conventions and the rules the
 gates enforce.
 
 ```bash
@@ -20,8 +24,10 @@ real `openai`, `anthropic` and OpenTelemetry SDKs and skip without them.
 
 - `hajer/_rules.py` and `hajer/_checksums.py` are generated from the platform's redaction catalog by
   tooling that lived in the platform repository. Never hand-edit them.
-- `docs/support-matrix.md` is generated from the `Target` declarations in `hajer/_attach.py` by
-  `scripts/generate_support_matrix.py`.
+- The support matrix on docs.hajer.ai (`docs/telemetry/_support-matrix.mdx` in `HajerAI/hajer-docs`, the
+  monorepo's `docs-site/`) is generated from the `Target` declarations in `hajer/_attach.py` by
+  `scripts/generate_support_matrix.py`. A change to a target regenerates it there:
+  `uv run python scripts/generate_support_matrix.py --write --out ../../docs-site/docs/telemetry/_support-matrix.mdx`.
 
 Files under `../contract/` (the redaction vectors) are vendored from the platform and are not edited here.
 
@@ -36,3 +42,17 @@ With all extras installed, the provider tests also run the real OpenAI and Anthr
 in-memory transports: OpenAI through `httpx.MockTransport`, the locked Anthropic SDK through
 `httpx2.MockTransport` (declared only in the development dependency group). They skip if that provider
 is not installed.
+
+## Moving the eval engine pin
+
+```bash
+just evals-pin 0.124.0            # rewrites package.json, regenerates package-lock.json (needs node + npm)
+just test --engine -m engine      # the golden test against the new engine (installs it into the cache)
+just check
+```
+
+Then note the bump under `[Unreleased]` in `CHANGELOG.md` and release: the pin changes only with a `hajer`
+release, so one package version names one engine version. `--package-lock-only` records every platform's
+optional packages, which is what lets a lock made on macOS install under `npm ci` on Linux CI.
+
+Also update the pinned version on docs.hajer.ai (`docs/evals/engine.md` in `HajerAI/hajer-docs`).

@@ -2,7 +2,7 @@
 
 A `Target` is a declaration, not behaviour: the module to watch, the client classes to patch at
 construction, the module-level functions to replace, and what capture that library actually gets
-(`Support`, which is the row `python/docs/support-matrix.md` prints — generated from these declarations by
+(`Support`, which is the row the support matrix on docs.hajer.ai prints — generated from these declarations by
 `python/scripts/generate_support_matrix.py`, never written by hand, so the documented support cannot drift
 from the instrumented support).
 
@@ -12,7 +12,7 @@ their namespace when they imported it, and that binding never looks at `litellm`
 happens at an arbitrary moment in a process's life, usually after those imports — so without rebinding,
 whether a call is captured would depend on import order, which is the one thing a monitoring tool must
 never make the customer reason about. `rebind` walks the modules already loaded and replaces every name
-still pointing at the original. Import order stops deciding; `README.md` states the one case it cannot
+still pointing at the original. Import order stops deciding; docs.hajer.ai states the one case it cannot
 fix (a local variable, or an alias created after `detach()`).
 """
 

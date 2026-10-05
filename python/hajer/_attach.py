@@ -376,8 +376,8 @@ def targets() -> tuple[Target, ...]:
     """Every library attach mode watches, in declaration order.
 
     One reader outside this module: `scripts/generate_support_matrix.py`, which prints
-    `docs/support-matrix.md` from these declarations so the documented support and the instrumented
-    support cannot drift. `tests/test_support_matrix.py` holds them to it.
+    the support matrix on docs.hajer.ai from these declarations so the documented support and the
+    instrumented support cannot drift. `tests/test_support_matrix.py` holds them to a printable table.
     """
     return _TARGETS
 

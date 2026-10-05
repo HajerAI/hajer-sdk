@@ -1,21 +1,20 @@
 # Hajer SDK
 
-At the point where a model output crosses into a side effect — an HTTP response, an email, a database
-write — your code hands [Hajer](https://hajer.ai) the request, the output and the evidence it chose.
-Hajer applies a named, versioned **verifier** and returns an **assessment**. Your application decides
-what to do with it.
+The open-source client for [Hajer](https://hajer.ai): your application's model calls as traces, its
+conversations as sessions, and `hajer eval` — the repository's promptfoo suites, run on a pinned engine and
+reported against the workflows and obligations they cover.
 
-This repository holds the open-source client for that call.
+**Documentation: [docs.hajer.ai](https://docs.hajer.ai)**
 
 | Directory | Package | Status |
 |---|---|---|
 | [`python/`](python/) | [`hajer`](https://pypi.org/project/hajer/) on PyPI | 0.x |
-| [`contract/`](contract/) | The platform API snapshot and shared test vectors the SDK is built against | copied from the platform; do not edit |
+| [`contract/`](contract/) | Shared test vectors the SDK is built against | copied from the platform; do not edit |
 
 ## Python in thirty seconds
 
 ```bash
-pip install hajer
+pip install "hajer[otel]"
 export HAJER_API_KEY=...  HAJER_TEAM_ID=...
 ```
 
@@ -23,31 +22,30 @@ export HAJER_API_KEY=...  HAJER_TEAM_ID=...
 import hajer
 from openai import OpenAI
 
-hajer_client = hajer.Hajer()
-openai_client = hajer.wrap(OpenAI())   # model calls are recorded beside the answer
+client = hajer.wrap(OpenAI())   # every model call this client makes is recorded
 
-reply = openai_client.chat.completions.create(model="gpt-5", messages=[{"role": "user", "content": question}])
-answer = reply.choices[0].message.content
-
-assessment = hajer_client.verify("refund-policy@1", {"question": question}, answer, {"orderState": order.state})
-if assessment.status == "violated":
-    ...  # your policy, your decision
+@hajer.workflow("answer-support-question")
+def answer(question: str) -> str:
+    reply = client.chat.completions.create(model="gpt-5", messages=[{"role": "user", "content": question}])
+    return reply.choices[0].message.content
 ```
 
-Without `HAJER_API_KEY` and `HAJER_TEAM_ID` the client is inert: `verify` returns `unavailable`, nothing
-opens a socket and nothing raises, so adding the SDK never breaks a test suite that has no credentials.
-The [Python README](python/README.md) has the rest.
+Without `HAJER_API_KEY` and `HAJER_TEAM_ID` the SDK is inert: nothing opens a socket and nothing raises,
+so adding it never breaks a test suite that has no credentials. Start with the
+[telemetry quickstart](https://docs.hajer.ai/telemetry/quickstart) or the
+[evals quickstart](https://docs.hajer.ai/evals/quickstart).
 
 ## Development
 
-The package is self-contained, with its own tooling and lockfile. Run commands from inside it:
+The package is self-contained, with its own tooling and lockfile; [`python/CONTRIBUTING.md`](python/CONTRIBUTING.md)
+has the workflow and [`python/CLAUDE.md`](python/CLAUDE.md) the rules.
 
 ```bash
 cd python && just sync && just check && just test
 ```
 
-`python/hajer/_wire.py` is generated from `contract/openapi.json` (`just contract-refresh`) and never
-edited by hand.
+Customer documentation lives in the docs site ([docs.hajer.ai](https://docs.hajer.ai), source in
+`HajerAI/hajer-docs`), not in this repository: a change to the public surface updates the matching page there.
 
 Releases are tagged per package: `python-v0.2.0` publishes `hajer` 0.2.0 to PyPI
 (`.github/workflows/release-python.yml`).

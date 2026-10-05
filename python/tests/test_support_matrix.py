@@ -1,9 +1,10 @@
-"""`docs/support-matrix.md` says what the code does, because the code prints it.
+"""The support matrix on docs.hajer.ai says what the code does, because the code prints it.
 
 The table is the answer to "will my library be captured, and what will the record carry" — the kind of
 document that goes stale silently and is then worse than no document at all. So it is generated from the
-`Target` declarations and this test holds the committed file to them: add a library, change a caveat, or
-turn a `no` into a `yes`, and the table moves in the same commit or the suite goes red.
+`Target` declarations into the docs site (HajerAI/hajer-docs, `docs/telemetry/_support-matrix.mdx`), and
+these tests hold the declarations and the generator to a table that can be printed: every library has a
+complete row, and the rendered partial carries every one of them.
 """
 
 from __future__ import annotations
@@ -16,10 +17,9 @@ from typing import Final, Protocol, cast
 from hajer._attach import targets
 from hajer._targets import COLUMNS, NO, YES, Target
 
-#: `tests/` → this package's root, where the generator and its output live.
+#: `tests/` → this package's root, where the generator lives.
 _ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 GENERATOR: Final[Path] = _ROOT / "scripts" / "generate_support_matrix.py"
-MATRIX: Final[Path] = _ROOT / "docs" / "support-matrix.md"
 
 
 class _Generator(Protocol):
@@ -36,12 +36,16 @@ def _generator() -> _Generator:
     return cast(_Generator, module)
 
 
-def test_matrix_matches_targets() -> None:
-    """The committed table is exactly what the declarations print. No drift, in either direction."""
-    assert MATRIX.exists(), f"{MATRIX} is missing; run scripts/generate_support_matrix.py --write"
-    assert MATRIX.read_text(encoding="utf-8") == _generator().render(targets()), (
-        "docs/support-matrix.md is stale; run: uv run python scripts/generate_support_matrix.py --write"
-    )
+def test_rendered_partial_has_one_row_per_target() -> None:
+    """The partial the docs site imports: an MDX comment (an HTML one breaks MDX), the header, and every target."""
+    rendered = _generator().render(targets())
+    assert rendered.startswith("{/*"), "the banner must be an MDX comment"
+    assert "<!--" not in rendered, "MDX cannot parse an HTML comment"
+    assert f"| {' | '.join(COLUMNS)} |" in rendered
+    rows = [
+        line for line in rendered.splitlines() if line.startswith("| ") and not line.startswith(f"| {COLUMNS[0]} |")
+    ]
+    assert [row.split(" | ")[0].removeprefix("| ") for row in rows] == [t.support.label for t in targets()]
 
 
 def test_every_instrumented_library_has_a_row_and_every_cell_is_filled() -> None:

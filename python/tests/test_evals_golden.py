@@ -37,7 +37,7 @@ EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "support"
 GOLDEN_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "evals" / "results.golden.json"
 ENGINE_FAILED_TESTS = 100
 #: The hosts the pinned engine tries to reach on its own during a loopback-only run, documented in
-#: docs/evals-engine.md ("What `hajer eval` switches off"): promptfoo's one `telemetry disabled` event, and the
+#: docs.hajer.ai (Evals → The engine, "Known outbound hosts"): promptfoo's one `telemetry disabled` event, and the
 #: cloud-identity probes two of its bundled provider SDKs make at start-up. The recording proxy refuses all of
 #: them and the run is unaffected; anything outside this set fails the test.
 KNOWN_ENGINE_EGRESS = frozenset({"r.promptfoo.app", "169.254.169.254", "metadata.google.internal."})

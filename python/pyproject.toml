@@ -49,7 +49,7 @@ pydantic = ["2.12.4", "locked"]
 [project.urls]
 Homepage = "https://hajer.ai"
 Repository = "https://github.com/HajerAI/hajer-sdk"
-Documentation = "https://github.com/HajerAI/hajer-sdk/tree/main/python/docs"
+Documentation = "https://docs.hajer.ai"
 Issues = "https://github.com/HajerAI/hajer-sdk/issues"
 Changelog = "https://github.com/HajerAI/hajer-sdk/blob/main/python/CHANGELOG.md"
 

@@ -27,7 +27,7 @@ a fact recorded before the `with` block returns.
 (`text_stream` on an Anthropic message stream) hands the caller its own iterator, so the chunks do not
 cross `__next__` and `stream_chunks` stays 0. The call, its model, its timing and whether it ran to the
 end are still recorded, and `get_final_message()` — which that consumer calls to read the answer — is
-recorded in full, usage included. `python/docs/support-matrix.md` states this per library.
+recorded in full, usage included. The support matrix on docs.hajer.ai states this per library.
 """
 
 from __future__ import annotations

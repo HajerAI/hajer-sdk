@@ -4,6 +4,15 @@ All notable changes to the `hajer` Python package. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses [semantic versioning](https://semver.org/);
 while the version is `0.x`, a minor release may change the public API.
 
+## [Unreleased]
+
+### Changed
+
+- **The documentation moved to [docs.hajer.ai](https://docs.hajer.ai).** `docs/reference.md`, `docs/evals.md`,
+  `docs/evals-engine.md` and `docs/support-matrix.md` are gone from this repository; the PyPI README is a short
+  landing page that links there, and `scripts/generate_support_matrix.py` writes the support matrix into the docs
+  site with `--out`. Contributor notes are in `CONTRIBUTING.md`.
+
 ## [0.2.0] - 2026-10-04
 
 **`verify` and `observe` are removed.** The package is now the tracing SDK for the Hajer platform and the

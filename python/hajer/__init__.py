@@ -24,7 +24,7 @@ span and the recorded calls carry one id. Without the `otel` extra they run the 
 every provider client it builds records its calls. `hajer/_attach.py` states exactly what leaves the
 process at each capture setting.
 
-`README.md` has every setting and what `wrap` can and cannot capture. The module docstrings say the
+docs.hajer.ai has every setting and what `wrap` can and cannot capture. The module docstrings say the
 same things where the code is.
 """
 
