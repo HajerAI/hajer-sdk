@@ -6,12 +6,15 @@ while the version is `0.x`, a minor release may change the public API.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-05
+
 ### Changed
 
 - **The documentation moved to [docs.hajer.ai](https://docs.hajer.ai).** `docs/reference.md`, `docs/evals.md`,
   `docs/evals-engine.md` and `docs/support-matrix.md` are gone from this repository; the PyPI README is a short
   landing page that links there, and `scripts/generate_support_matrix.py` writes the support matrix into the docs
-  site with `--out`. Contributor notes are in `CONTRIBUTING.md`.
+  site with `--out`. Contributor notes are in `CONTRIBUTING.md`. The old `docs/` paths keep a one-line pointer
+  each, so links from the 0.2.0 PyPI page still land somewhere.
 
 ## [0.2.0] - 2026-10-04
 
