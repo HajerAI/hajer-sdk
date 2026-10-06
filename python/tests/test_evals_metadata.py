@@ -9,6 +9,7 @@ from hajer.evals._metadata import (
     E_HAJER_NOT_OBJECT,
     ID_MAX_CHARS,
     W_NO_TEST_CASE_ID,
+    W_TEMPLATE_UNDEFINED_VAR,
     HajerTestMetadata,
     classify_test,
     merged_hajer_metadata,
@@ -230,3 +231,92 @@ class TestInheritance:
         metadata = test["metadata"]
         assert isinstance(metadata, dict)
         assert metadata["hajer"] == before
+
+
+def _asserting(*assertions: JsonValue, vars: JsonValue = None, options: JsonValue = None) -> JsonObject:
+    test: JsonObject = {"description": "greeting", "assert": list(assertions)}
+    if vars is not None:
+        test["vars"] = vars
+    if options is not None:
+        test["options"] = options
+    return test
+
+
+def _template_warnings(test: JsonObject, default_test: JsonObject | None = None) -> tuple[str, ...]:
+    item = classify_test(test, 2, default_test=default_test)
+    assert item.errors == ()
+    return tuple(line for line in item.warnings if line.startswith(f"[{W_TEMPLATE_UNDEFINED_VAR}]"))
+
+
+class TestAssertionTemplates:
+    """promptfoo renders an assertion value with the test's vars, and an undefined one renders as ""."""
+
+    def test_an_undefined_var_in_a_value_is_a_warning_that_says_what_it_renders_as(self) -> None:
+        test = _asserting({"type": "not-contains", "value": "{{firstName}}"}, vars={"question": "hi"})
+        (line,) = _template_warnings(test)
+        assert line == (
+            f'[{W_TEMPLATE_UNDEFINED_VAR}] test #2 "greeting": assert.0.value uses {{{{firstName}}}} but the test has '
+            "no var 'firstName'; promptfoo renders it as an empty string; to match the literal text write "
+            "{% raw %}{{firstName}}{% endraw %}"
+        )
+
+    def test_a_plain_test_without_hajer_metadata_is_checked_too(self) -> None:
+        item = classify_test(_asserting({"type": "contains", "value": "{{ missing }}"}), 0)
+        assert item.correlation == "none"
+        assert len(item.warnings) == 1
+
+    def test_attributes_filters_and_whitespace_name_the_root(self) -> None:
+        test = _asserting(
+            {"type": "contains", "value": "{{ user.name }} {{customer | upper}} {{- order.id -}}"},
+            vars={"user": {"name": "Ada"}},
+        )
+        warned = _template_warnings(test)
+        assert [line.split("uses ")[1].split(" ")[0] for line in warned] == ["{{customer}}", "{{order}}"]
+
+    def test_a_defined_var_is_silent_from_the_test_or_the_default(self) -> None:
+        test = _asserting({"type": "contains", "value": "{{ firstName }} {{ city }}"}, vars={"firstName": "Ada"})
+        assert _template_warnings(test, default_test={"vars": {"city": "Paris"}}) == ()
+
+    def test_raw_blocks_comments_globals_and_bound_names_are_not_vars(self) -> None:
+        value = (
+            "{% raw %}{{firstName}}{% endraw %} {#- {{ note }} -#} {{ env.HOME }} {{ 'literal' }} {{ 3 }} "
+            "{% for item in [1, 2] %}{{ item }}{% endfor %} {% set greeting = 'hi' %}{{ greeting }}"
+        )
+        assert _template_warnings(_asserting({"type": "contains", "value": value}, vars={})) == ()
+
+    def test_file_and_package_values_are_loaded_not_rendered(self) -> None:
+        test = _asserting(
+            {"type": "contains", "value": "file://expected/{{x}}.txt"},
+            {"type": "javascript", "value": "package:checks:{{y}}"},
+        )
+        assert _template_warnings(test) == ()
+
+    def test_a_list_value_default_asserts_and_nested_assert_sets_are_all_checked(self) -> None:
+        test = _asserting(
+            {"type": "contains-any", "value": ["ok", "{{a}}"]},
+            {"type": "assert-set", "assert": [{"type": "contains", "value": "{{b}}"}]},
+        )
+        warned = _template_warnings(test, default_test={"assert": [{"type": "icontains", "value": "{{c}}"}]})
+        locations = [line.split(": ", 1)[1].split(".value")[0] for line in warned]
+        assert locations == ["assert.0", "assert.1.assert.0", "defaultTest.assert.0"]
+
+    def test_disabled_default_asserts_are_not_checked(self) -> None:
+        test = _asserting(options={"disableDefaultAsserts": True})
+        assert _template_warnings(test, default_test={"assert": [{"type": "contains", "value": "{{c}}"}]}) == ()
+
+    def test_vars_that_are_not_an_object_or_are_transformed_skip_the_check(self) -> None:
+        missing: JsonObject = {"type": "contains", "value": "{{x}}"}
+        assert _template_warnings(_asserting(missing, vars="file://vars.yaml")) == ()
+        assert _template_warnings(_asserting(missing, options={"transformVars": "vars.x = 1; return vars"})) == ()
+        assert _template_warnings(_asserting(missing), default_test={"options": {"transformVars": "file://t.js"}}) == ()
+
+    def test_it_is_only_ever_a_warning_beside_the_stable_id_one(self) -> None:
+        test = _asserting({"type": "contains", "value": "{{x}}"})
+        test["metadata"] = {"hajer": {"workflowId": "wf_support"}}
+        item = classify_test(test, 0)
+        assert item.correlation == "platform"
+        assert item.errors == ()
+        assert [line.split("]")[0] for line in item.warnings] == [
+            f"[{W_NO_TEST_CASE_ID}",
+            f"[{W_TEMPLATE_UNDEFINED_VAR}",
+        ]

@@ -70,6 +70,10 @@ OTEL_MISSING: Final[str] = (
     "hajer emits no spans: the OpenTelemetry SDK is not installed. "
     "Install the `otel` extra (`pip install 'hajer[otel]'`) to export them."
 )
+#: What it says instead when the OTel half imported but building the exporter raised: a broken provider or exporter
+#: is not a missing package, and telling its owner to install what they have sends them the wrong way. The class name
+#: only — an exception's message can carry an endpoint's credentials.
+OTEL_BUILD_FAILED: Final[str] = "hajer emits no spans: its OpenTelemetry exporter could not be built ({error_type})."
 #: OTLP/HTTP's traces path, appended to a collector endpoint (an endpoint, not a traces URL — the same
 #: convention `OTEL_EXPORTER_OTLP_ENDPOINT` follows). The platform's route carries it already.
 OTLP_TRACES_SUFFIX: Final[str] = "/v1/traces"
@@ -217,6 +221,9 @@ def _policy() -> ClientRedactionPolicy:
 def _backend() -> Backend | None:
     """The OTel half, imported on first use, or `None` — once, with one warning — when it cannot be.
 
+    The warning says which: `OTEL_MISSING` when the package is not importable, `OTEL_BUILD_FAILED` when it is and
+    building the exporter raised.
+
     `importlib.import_module` rather than an `import` statement, so that a process without `hajer[otel]` (or a test
     that puts `None` in `sys.modules` for the module) reaches the no-op path through the same code it would reach the
     real one, and so that the import happens here, inside the try, at the first span rather than at `import hajer`.
@@ -228,17 +235,21 @@ def _backend() -> Backend | None:
         settings = _CONFIGURATION.settings
     if settings is None:
         settings = _settings()
+    backend: Backend | None = None
+    failure = OTEL_MISSING
     try:
         module = importlib.import_module("hajer._telemetry_otel")
         build = cast(Callable[[HajerSettings, object | None], Backend], module.build)
-        backend: Backend | None = build(settings, _CONFIGURATION.tracer_provider)
-    except Exception:  # noqa: BLE001 - an optional dependency, or a broken provider, may never break the application
-        backend = None
+        backend = build(settings, _CONFIGURATION.tracer_provider)
+    except ImportError:
+        pass
+    except Exception as error:  # noqa: BLE001 - a broken provider or exporter may never break the application
+        failure = OTEL_BUILD_FAILED.format(error_type=f"{type(error).__module__}.{type(error).__qualname__}")
     with _CONFIGURATION.lock:
         _CONFIGURATION.backend = backend
         if backend is None and not _CONFIGURATION.warned:
             _CONFIGURATION.warned = True
-            _LOG.warning(OTEL_MISSING)
+            _LOG.warning(failure)
         if backend is not None and not _CONFIGURATION.exit_hook_registered:
             _CONFIGURATION.exit_hook_registered = True
             atexit.register(_flush_at_exit)
@@ -265,13 +276,18 @@ def _flush_at_exit() -> None:
     """The `atexit` hook: whatever is still queued gets its one chance to leave, then the SDK's own exporter stops.
 
     Never raises, at exit least of all. The shutdown is what ends the batch processor's thread for a provider the
-    SDK built; an application's own provider is left to its own shutdown.
+    SDK built; an application's own provider is left to its own shutdown. Only the backend already loaded: after a
+    `configure()` there may be none, and building one at interpreter exit has nothing queued to send and, with
+    half the modules torn down, every chance of failing and logging about it.
     """
     try:
-        flush()
         with _CONFIGURATION.lock:
             backend = _CONFIGURATION.backend
-        if backend is not None:
+        if backend is None:
+            return
+        try:
+            backend.flush(_settings().trace_flush_timeout_ms)
+        finally:
             backend.shutdown()
     except Exception:  # noqa: BLE001, S110 - nothing may raise out of an atexit hook
         pass

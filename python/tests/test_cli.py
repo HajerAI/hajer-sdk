@@ -19,7 +19,7 @@ import hajer
 from hajer.__main__ import doctor, main, redaction_catalog
 from hajer._json import JsonObject
 from hajer._paths import HEALTH_PATH, VERSION
-from hajer._settings import VARIABLES, HajerSettings
+from hajer._settings import FALLBACK_VARIABLES, VARIABLES, HajerSettings
 from hajer._transport import probe
 
 SECRET: Final[str] = "sk-not-a-real-key-0123456789"
@@ -43,10 +43,11 @@ def _refuses() -> httpx.MockTransport:
 
 def _rows(printed: str) -> dict[str, tuple[str, str]]:
     """The settings table, as `{variable: (source, value)}`. Four whitespace-separated columns."""
+    fields = {name for name, _ in VARIABLES}
     found: dict[str, tuple[str, str]] = {}
     for line in printed.splitlines():
         parts = line.split(None, 3)
-        if len(parts) == 4 and parts[1].startswith("HAJER_"):
+        if len(parts) == 4 and parts[0] in fields:
             found[parts[1]] = (parts[2], parts[3])
     return found
 
@@ -61,6 +62,9 @@ class TestDoctor:
         monkeypatch.setenv("HAJER_TEAM_ID", "team-1")
         monkeypatch.delenv("HAJER_EVAL_RUNS_KEEP", raising=False)
         monkeypatch.delenv("HAJER_ATTACH", raising=False)
+        for variables in FALLBACK_VARIABLES.values():
+            for variable in variables:
+                monkeypatch.delenv(variable, raising=False)
 
         assert doctor(as_json=False, settings=HajerSettings.from_env(), transport=_answers(200)) == 0
         printed = capsys.readouterr().out
@@ -77,6 +81,19 @@ class TestDoctor:
         assert redaction_catalog() in printed
         assert "otel            opentelemetry-sdk " in printed
         assert "traces          nowhere: HAJER_API_KEY absent" in printed
+
+    def test_doctor_names_the_standard_variable_a_value_came_from(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.delenv("HAJER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("HAJER_SERVICE_NAME", raising=False)
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+        monkeypatch.setenv("OTEL_SERVICE_NAME", "svc")
+        doctor(as_json=False, settings=HajerSettings.from_env(), transport=_answers(200))
+        rows = _rows(capsys.readouterr().out)
+        assert rows["OTEL_EXPORTER_OTLP_ENDPOINT"] == ("env", "http://collector:4318")
+        assert rows["OTEL_SERVICE_NAME"] == ("env", "svc")
+        assert "HAJER_OTLP_ENDPOINT" not in rows, "one row per setting, under the variable it was read from"
 
     def test_the_key_is_never_printed(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

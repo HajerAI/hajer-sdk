@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import hajer
-from hajer._settings import BOOLEAN_FIELDS, DEFAULT_BASE_URL, VARIABLES, settings_sources
+from hajer._settings import BOOLEAN_FIELDS, DEFAULT_BASE_URL, FALLBACK_VARIABLES, VARIABLES, settings_sources
 
 
 class TestFromEnv:
@@ -230,3 +230,32 @@ class TestTheVariableTable:
         assert rows["HAJER_BASE_URL"].source == "default"
         assert rows["HAJER_BASE_URL"].value == DEFAULT_BASE_URL
         assert rows["HAJER_TEAM_ID"].value == "absent"
+
+    def test_a_value_read_from_a_fallback_names_that_variable(self) -> None:
+        """An endpoint from `OTEL_EXPORTER_OTLP_ENDPOINT` is not a default; the row says which variable it was."""
+        environment = {
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318",
+            "OTEL_SERVICE_NAME": "svc",
+            "XDG_CACHE_HOME": "/xdg",
+        }
+        rows = {row.name: row for row in settings_sources(hajer.HajerSettings.from_env(environment), environment)}
+        assert (rows["otlp_endpoint"].variable, rows["otlp_endpoint"].source) == ("OTEL_EXPORTER_OTLP_ENDPOINT", "env")
+        assert rows["otlp_endpoint"].value == "http://collector:4318"
+        assert (rows["service_name"].variable, rows["service_name"].source) == ("OTEL_SERVICE_NAME", "env")
+        assert rows["service_name"].value == "svc"
+        assert (rows["cache_dir"].variable, rows["cache_dir"].value) == ("XDG_CACHE_HOME", str(Path("/xdg") / "hajer"))
+
+    def test_the_own_variable_wins_and_is_the_one_named(self) -> None:
+        environment = {"OTEL_SERVICE_NAME": "svc", "HAJER_SERVICE_NAME": "mine"}
+        rows = {row.name: row for row in settings_sources(hajer.HajerSettings.from_env(environment), environment)}
+        assert (rows["service_name"].variable, rows["service_name"].source) == ("HAJER_SERVICE_NAME", "env")
+        assert rows["service_name"].value == "mine"
+
+    def test_an_unset_field_names_its_own_variable_as_the_default(self) -> None:
+        rows = {row.name: row for row in settings_sources(hajer.HajerSettings.from_env({}), {})}
+        for name in FALLBACK_VARIABLES:
+            assert rows[name].variable == f"HAJER_{name.upper()}"
+            assert rows[name].source == "default"
+
+    def test_every_fallback_belongs_to_a_setting(self) -> None:
+        assert set(FALLBACK_VARIABLES) <= {name for name, _ in VARIABLES}

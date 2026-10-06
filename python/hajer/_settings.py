@@ -321,20 +321,15 @@ class HajerSettings(BaseModel):
             attach=_boolean(source, "HAJER_ATTACH", default=False),
             traces_enabled=_boolean(source, "HAJER_TRACES_ENABLED", default=True),
             model_spans=_boolean(source, "HAJER_MODEL_SPANS", default=True),
-            otlp_endpoint=_string(source, "HAJER_OTLP_ENDPOINT") or _string(source, "OTEL_EXPORTER_OTLP_ENDPOINT"),
+            otlp_endpoint=_value(_first_set(source, "otlp_endpoint")),
             otlp_headers=_string(source, "HAJER_OTLP_HEADERS"),
-            service_name=_string(source, "HAJER_SERVICE_NAME") or _string(source, "OTEL_SERVICE_NAME"),
+            service_name=_value(_first_set(source, "service_name")),
             trace_flush_timeout_ms=_positive_int(source, "HAJER_TRACE_FLUSH_TIMEOUT_MS", 2_000),
             trace_export_timeout_ms=_positive_int(source, "HAJER_TRACE_EXPORT_TIMEOUT_MS", 5_000),
             trace_batch_delay_ms=_positive_int(source, "HAJER_TRACE_BATCH_DELAY_MS", 5_000),
             trace_queue_max=_positive_int(source, "HAJER_TRACE_QUEUE_MAX", 2_048),
             trace_batch_max=_positive_int(source, "HAJER_TRACE_BATCH_MAX", 128),
-            cache_dir=_string(source, "HAJER_CACHE_DIR")
-            or (
-                str(Path(xdg) / "hajer")
-                if (xdg := _string(source, "XDG_CACHE_HOME")) is not None
-                else _default_cache_dir()
-            ),
+            cache_dir=_cache_dir(source),
             eval_install_timeout_s=_positive_int(source, "HAJER_EVAL_INSTALL_TIMEOUT_S", 600),
             eval_runs_keep=_positive_int(source, "HAJER_EVAL_RUNS_KEEP", 20),
             eval_otlp_port=_positive_int(source, "HAJER_EVAL_OTLP_PORT", 4318),
@@ -429,6 +424,15 @@ VARIABLES: Final[tuple[tuple[str, str], ...]] = (
     ("eval_manifest_obligations", "HAJER_EVAL_MANIFEST_OBLIGATIONS"),
     ("disabled", "HAJER_DISABLED"),
 )
+#: The variables outside `HAJER_*` a field falls back to when its own is unset, in the order they are read. In
+#: this table rather than spelled inline in `from_env` so that `doctor` names the variable a value actually came
+#: from: an endpoint read from `OTEL_EXPORTER_OTLP_ENDPOINT` is not a default, and saying so sent people looking
+#: for a misconfiguration that was not there.
+FALLBACK_VARIABLES: Final[Mapping[str, tuple[str, ...]]] = {
+    "otlp_endpoint": ("OTEL_EXPORTER_OTLP_ENDPOINT",),
+    "service_name": ("OTEL_SERVICE_NAME",),
+    "cache_dir": ("XDG_CACHE_HOME",),
+}
 #: Every boolean setting. `doctor` prints them, and one test asserts that each reads every spelling.
 BOOLEAN_FIELDS: Final[tuple[str, ...]] = (
     "capture_content",
@@ -440,6 +444,7 @@ BOOLEAN_FIELDS: Final[tuple[str, ...]] = (
 )
 #: The one value that is never printed. A key in a terminal is a key in a scrollback buffer.
 SECRET_FIELDS: Final[frozenset[str]] = frozenset({"api_key"})
+_PRIMARY_VARIABLE: Final[Mapping[str, str]] = dict(VARIABLES)
 SOURCE_ENV: Final[str] = "env"
 SOURCE_DEFAULT: Final[str] = "default"
 #: What `doctor` prints for a setting that has no value at all.
@@ -515,18 +520,25 @@ def ci_environment_snapshot(env: Mapping[str, str] | None = None) -> dict[str, s
 
 
 def settings_sources(settings: HajerSettings, env: Mapping[str, str] | None = None) -> tuple[SettingSource, ...]:
-    """Every `HAJER_*` setting, its value in force, and whether it came from the environment or a default."""
+    """Every setting, its value in force, and the variable it came from — or its own variable and `default`.
+
+    The variable is the first one set of the field's own and its `FALLBACK_VARIABLES`, which is the one `from_env`
+    read: `OTEL_SERVICE_NAME` on the `service_name` row when that is where the name came from.
+    """
     source: Mapping[str, str] = os.environ if env is None else env
     dumped = settings.model_dump()
-    return tuple(
-        SettingSource(
-            name=name,
-            variable=variable,
-            value=_rendered(name, dumped.get(name), set_in_env=_string(source, variable) is not None),
-            source=SOURCE_ENV if _string(source, variable) is not None else SOURCE_DEFAULT,
+    rows: list[SettingSource] = []
+    for name, variable in VARIABLES:
+        found = _first_set(source, name)
+        rows.append(
+            SettingSource(
+                name=name,
+                variable=variable if found is None else found[0],
+                value=_rendered(name, dumped.get(name), set_in_env=found is not None),
+                source=SOURCE_DEFAULT if found is None else SOURCE_ENV,
+            )
         )
-        for name, variable in VARIABLES
-    )
+    return tuple(rows)
 
 
 def _rendered(name: str, value: object, *, set_in_env: bool) -> str:
@@ -546,6 +558,27 @@ def _ids(joined: str | None) -> tuple[str, ...]:
     if joined is None:
         return ()
     return tuple(item.strip() for item in joined.split(",") if item.strip())
+
+
+def _first_set(env: Mapping[str, str], field: str) -> tuple[str, str] | None:
+    """The first of a field's variables that is set — its own, then `FALLBACK_VARIABLES` — and its value."""
+    for variable in (_PRIMARY_VARIABLE[field], *FALLBACK_VARIABLES.get(field, ())):
+        if (value := _string(env, variable)) is not None:
+            return variable, value
+    return None
+
+
+def _value(found: tuple[str, str] | None) -> str | None:
+    return None if found is None else found[1]
+
+
+def _cache_dir(env: Mapping[str, str]) -> str:
+    """`HAJER_CACHE_DIR` as given; `XDG_CACHE_HOME` names the parent of the SDK's own directory, not the directory."""
+    found = _first_set(env, "cache_dir")
+    if found is None:
+        return _default_cache_dir()
+    variable, value = found
+    return value if variable == _PRIMARY_VARIABLE["cache_dir"] else str(Path(value) / "hajer")
 
 
 def _string(env: Mapping[str, str], name: str) -> str | None:

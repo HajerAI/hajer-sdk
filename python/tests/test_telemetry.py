@@ -324,6 +324,67 @@ class _FailingStart(TracerProvider):
         raise RuntimeError("exporter down")
 
 
+def test_a_provider_that_cannot_be_built_is_not_reported_as_a_missing_package(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The OTel half imported fine; telling its owner to install it would send them the wrong way."""
+    _telemetry.configure(hajer.HajerSettings(), tracer_provider=_BrokenProvider())
+    try:
+        with caplog.at_level(logging.WARNING, logger="hajer"):
+            with hajer.workflow("answer"):
+                pass
+            with hajer.workflow("again"):
+                pass
+        messages = [record.getMessage() for record in caplog.records if record.name == "hajer"]
+        assert messages == [_telemetry.OTEL_BUILD_FAILED.format(error_type="builtins.RuntimeError")]
+        assert "no tracer today" not in messages[0], "the class name, never the message"
+    finally:
+        _telemetry.configure(None)
+
+
+def test_the_exit_hook_after_a_reset_builds_nothing_and_says_nothing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """After `configure()` there is no backend; the exit hook must not build one at interpreter exit to flush it."""
+    built: list[object] = []
+    real = _telemetry.importlib.import_module
+
+    def watched(name: str) -> object:
+        built.append(name)
+        return real(name)
+
+    _telemetry.configure(None)
+    monkeypatch.setattr(_telemetry.importlib, "import_module", watched)
+    with caplog.at_level(logging.WARNING, logger="hajer"):
+        _telemetry._flush_at_exit()  # pyright: ignore[reportPrivateUsage]
+    assert built == []
+    assert [record for record in caplog.records if record.name == "hajer"] == []
+
+
+class _CountingFlushes(TracerProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushes = 0
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        del timeout_millis
+        self.flushes += 1
+        return True
+
+
+def test_the_exit_hook_flushes_the_backend_already_in_use() -> None:
+    provider = _CountingFlushes()
+    _telemetry.configure(hajer.HajerSettings(), tracer_provider=provider)
+    try:
+        with hajer.workflow("answer"):
+            pass
+        _telemetry._flush_at_exit()  # pyright: ignore[reportPrivateUsage]
+        assert provider.flushes == 1
+    finally:
+        _telemetry.configure(None)
+        provider.shutdown()
+
+
 def test_a_flush_that_raises_is_reported_false() -> None:
     _telemetry.configure(hajer.HajerSettings(), tracer_provider=_FailingStart())
     try:
