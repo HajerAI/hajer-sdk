@@ -161,6 +161,7 @@ def before_all(context: JsonObject, *, settings: HajerSettings | None = None) ->
     if not isinstance(suite, dict) or not isinstance(tests, list):
         return context
     inherited = _inherited_hajer(suite)
+    default_test = _default_test(suite)
     updated: list[JsonValue] = []
     classified: list[TestClassification] = []
     for index, test in enumerate(tests):
@@ -170,7 +171,8 @@ def before_all(context: JsonObject, *, settings: HajerSettings | None = None) ->
             continue
         merged = merged_hajer_metadata(test, inherited)
         updated.append(test if merged is None else _with_hajer(test, merged))
-        classified.append(_against_manifest(classify_test(test, index, inherited=inherited), settings))
+        item = classify_test(test, index, inherited=inherited, default_test=default_test)
+        classified.append(_against_manifest(item, settings))
     narrowing = _Filter(workflow_id=settings.eval_workflow, obligation_ids=settings.eval_obligation_ids)
     errors = tuple(line for item in classified for line in item.errors)
     if errors:
@@ -231,10 +233,16 @@ def _terminal_line(warning: str, ref: str | None, workflow_id: str | None) -> st
     return f"{WARNING_PREFIX} {warning}"
 
 
+def _default_test(suite: JsonObject) -> JsonObject | None:
+    """`suite.defaultTest` when it is an object; promptfoo has loaded a `file://` one by the time the hook runs."""
+    default = suite.get(DEFAULT_TEST_KEY)
+    return default if isinstance(default, dict) else None
+
+
 def _inherited_hajer(suite: JsonObject) -> JsonObject | None:
     """`suite.defaultTest.metadata.hajer` when it is an object: what promptfoo would shallow-merge under every test."""
-    default = suite.get(DEFAULT_TEST_KEY)
-    if not isinstance(default, dict):
+    default = _default_test(suite)
+    if default is None:
         return None
     metadata = default.get(METADATA_KEY)
     if not isinstance(metadata, dict):

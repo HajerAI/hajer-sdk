@@ -13,7 +13,12 @@ from hajer._errors import EvalMetadataError
 from hajer._json import JsonObject, JsonValue
 from hajer.evals import _hook_entry
 from hajer.evals._hook import HOOK_REPORT_SCHEMA_VERSION, WARNING_PREFIX, before_all, format_warnings, read_report
-from hajer.evals._metadata import E_HAJER_INVALID, E_OBLIGATION_UNDECLARED, W_NO_TEST_CASE_ID
+from hajer.evals._metadata import (
+    E_HAJER_INVALID,
+    E_OBLIGATION_UNDECLARED,
+    W_NO_TEST_CASE_ID,
+    W_TEMPLATE_UNDEFINED_VAR,
+)
 
 PROMPTS: list[JsonValue] = [{"raw": "Answer {{question}}", "label": "support"}]
 PROVIDERS: list[JsonValue] = [{"id": "file://provider.py", "label": "app"}]
@@ -322,6 +327,29 @@ class TestTheReport:
             "reordered; add metadata.testCaseId",
             f"{WARNING_PREFIX} [{W_NO_TEST_CASE_ID}] test #2 (workflowId=wf_sales): no metadata.testCaseId; correlation "
             "falls back to the test's position, which moves when tests are reordered; add metadata.testCaseId",
+        )
+
+    def test_an_undefined_template_var_reaches_the_report_and_the_run_still_starts(self, tmp_path: Path) -> None:
+        """The defaultTest's vars and asserts count; the warning is in the report the payload's `warnings` copy."""
+        test = _test({"workflowId": "wf_support"}, test_case_id="tc-1", description="greeting")
+        test["assert"] = [{"type": "not-contains", "value": "{{ firstName }} {{ city }}"}]
+        default_test: JsonObject = {"vars": {"city": "Paris"}, "assert": [{"type": "contains", "value": "{{tone}}"}]}
+        result = before_all(_suite([test], default_test), settings=_settings(tmp_path))
+        assert len(_tests_of(result)) == 1
+        report = _report(tmp_path)
+        assert report["errors"] == []
+        warnings = report["warnings"]
+        assert isinstance(warnings, list)
+        assert [line.split(": ", 1)[1].split(" but")[0] for line in warnings if isinstance(line, str)] == [
+            "assert.0.value uses {{firstName}}",
+            "defaultTest.assert.0.value uses {{tone}}",
+        ]
+        assert all(
+            isinstance(line, str) and line.startswith(f"[{W_TEMPLATE_UNDEFINED_VAR}] test #0") for line in warnings
+        )
+        (line, _) = format_warnings(report)
+        assert line.startswith(
+            f'{WARNING_PREFIX} [{W_TEMPLATE_UNDEFINED_VAR}] test #0 "tc-1" (workflowId=wf_support): '
         )
 
     def test_format_warnings_tolerates_a_report_it_does_not_recognise(self) -> None:

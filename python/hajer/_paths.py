@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Final
 
-VERSION: Final[str] = "0.2.1"
+VERSION: Final[str] = "0.2.2"
 
 #: Where the span emitter exports to by default: the platform's OTLP/HTTP traces receiver for the team
 #: (`hajer._telemetry`). The whole route, OTLP's own `/v1/traces` included.

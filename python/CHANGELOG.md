@@ -6,6 +6,31 @@ while the version is `0.x`, a minor release may change the public API.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-06
+
+### Added
+
+- **`hajer eval` warns about an assertion value that names a var the test does not have.** promptfoo renders an
+  assertion's `value` as a Nunjucks template with the test's vars, and an undefined one renders as an empty string,
+  so `not-contains: "Dear {{firstName}}"` with no `firstName` var checks for `"Dear "` and passes. The `beforeAll`
+  hook now reports `W_TEMPLATE_UNDEFINED_VAR` for every `{{ name }}` (or `{{ name.attr }}`, `{{ name | filter }}`)
+  whose root is not one of the test's vars (`defaultTest.vars` under its own), in the test's `assert`, in
+  `defaultTest.assert` and inside `assert-set`s, ignoring `{% raw %}` blocks. A warning, never an error: it is
+  printed with the others and carried in the run's `warnings`. A test whose vars are not an object, or that has a
+  `transformVars`, is not checked.
+
+### Fixed
+
+- **`hajer doctor` names the standard OpenTelemetry variables it read.** An `otlp_endpoint` from
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, a `service_name` from `OTEL_SERVICE_NAME` and a `cache_dir` from `XDG_CACHE_HOME`
+  were printed as `default` under the `HAJER_*` variable. The row now shows the variable the value came from, with
+  source `env`.
+- **No false "OpenTelemetry SDK is not installed" at exit.** After a `configure()`, the exit hook built a new
+  exporter at interpreter exit just to flush it, and any failure there was logged as a missing package. The exit
+  hook now flushes and stops only the exporter already in use, and an exporter that fails to build is reported as
+  such (`hajer emits no spans: its OpenTelemetry exporter could not be built (<exception class>).`), keeping
+  "not installed" for an actual missing `hajer[otel]`.
+
 ## [0.2.1] - 2026-10-05
 
 ### Changed
